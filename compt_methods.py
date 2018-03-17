@@ -1,4 +1,5 @@
 import sktensor
+import time
 #import os
 #import scipy.io as scio
 import numpy as np
@@ -30,6 +31,7 @@ def T_SVD(Atensor,p):
 
 #tucker分解的填充方法
 def tucker_cpt(sparse_data,miss_loc,rank_list,W):
+    time_s = time.time()
     est_data = sparse_data.copy()
     dshape = np.shape(est_data)
     SD = dtensor(est_data)
@@ -37,12 +39,14 @@ def tucker_cpt(sparse_data,miss_loc,rank_list,W):
     core1,U1 = tucker.hooi(SD,rank_list,init='nvecs')
     #ttm:矩阵乘法
     ttm_data = core1.ttm(U1[0],0).ttm(U1[1],1).ttm(U1[2],2)
-    print(np.sum((est_data*W-ttm_data*W)**2)/np.sum((est_data*W)**2))
     miss_sum = 0
     for _set in miss_loc:
         i,j,k = _set
         est_data[i,j,k] = ttm_data[i,j,k]
         miss_sum += ttm_data[i,j,k]
+    time_e = time.time()
+    print('-'*8+'tucker'+'-'*8)
+    print('exec_time:'+str(time_e-time_s)+'s')
     return est_data
 
 #STD填充
@@ -51,6 +55,7 @@ def STD_cpt(sparse_data,miss_loc,U_dict,r_dict,W):
 
 #CP分解的填充方法
 def cp_cpt(sparse_data,miss_loc,rank):
+    time_s = time.time()
     est_data = sparse_data.copy()
     dshape = np.shape(est_data)
     SD = dtensor(sparse_data.copy())
@@ -60,10 +65,14 @@ def cp_cpt(sparse_data,miss_loc,rank):
     for _set in miss_loc:
         i,j,k = _set
         est_data[i,j,k] = loc_data[i,j,k]
+    time_e = time.time()
+    print('-'*8+'cp'+'-'*8)
+    print('exec_time:'+str(time_e-time_s)+'s')
     return est_data
 
 #LRTC的填充方法
 def lrtc_cpt(sparse_data,miss_loc,alpha,beta,gama,conv_thre,K,W):
+    time_s = time.time()
     Y = sparse_data.copy()
     N = len(np.shape(sparse_data))
     for _set in miss_loc:
@@ -95,12 +104,14 @@ def lrtc_cpt(sparse_data,miss_loc,alpha,beta,gama,conv_thre,K,W):
             Y[p,q,r] = Y_temp[p,q,r]
         Y_Fnorm = np.sum((Y-Y_pre)**2)
         if Y_Fnorm < conv_thre:
-            print(Y_Fnorm)
             break
-    print('iter:',iter,Y_Fnorm)
+    time_e = time.time()
+    print('-'*8+'lrtc'+'-'*8)
+    print('exec_time:'+str(time_e-time_s)+'s')
     return Y
  
 def silrtc_cpt(sparse_data,miss_loc,alpha,beta,conv_thre,K):
+    time_s = time.time()
     X = sparse_data.copy()
     for _set in miss_loc:
         p,q,r = _set
@@ -124,10 +135,13 @@ def silrtc_cpt(sparse_data,miss_loc,alpha,beta,conv_thre,K):
         X_diffnorm = np.sum((X-X_pre)**2)
         if X_diffnorm < conv_thre:
             break
-    print(iter,X_diffnorm)
+    time_e = time.time()
+    print('-'*8+'silrtc'+'-'*8)
+    print('exec_time:'+str(time_e-time_s)+'s')
     return X
 
 def halrtc_cpt(sparse_data,miss_loc,lou,conv_thre,K,W):
+    time_s = time.time()
     X = sparse_data.copy()
     Y = {}
     N = len(np.shape(X))
@@ -157,5 +171,7 @@ def halrtc_cpt(sparse_data,miss_loc,lou,conv_thre,K,W):
             break
         for i in range(N):
             Y[i] -= lou*(M[i]-X)
-    print(iter,X_Fnorm)
+    time_e = time.time()
+    print('-'*8+'halrtc'+'-'*8)
+    print('exec_time:'+str(time_e-time_s)+'s')
     return X
