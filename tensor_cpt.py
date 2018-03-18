@@ -17,12 +17,6 @@ def get_tensor(mat_file,ori_file,size_=0):
     if size_:
         p,q,r = size_
         ori_data = ori_data[:p,:q,:r]
-        for i in range(p):
-            for j in range(q):
-                for k in range(r):
-                    if ori_data[i,j,k] == -1:
-                        ori_data[i,j,k] = np.sum(ori_data[:,j,k])/(ori[:,j,k]>0).sum()
-
     scio.savemat(ori_file,{'Speed':ori_data})
     return ori_data
 
@@ -61,6 +55,28 @@ def norm_data(data_input):
             norm_mode1 = dtensor(data[i,j,:]).norm()
             data[i,j,:] /= norm_mode1
     return data
+
+#处理原始的缺失数据
+def deal_orimiss(sparse_data,shorten = 'True'):
+    W = sparse_data>0
+    W_miss = sparse_data<=0
+    ori_missloc = []
+    M_pos = np.where(W_miss)
+    if not shorten:
+        for i in len(W_miss[0]):
+            pos1,pos2,pos3 = W_miss[0][i],W_miss[1][i],W_miss[2][i]
+            neigh_info = [sparse_data[pos1,pos2-1,pos3],sparse_data[pos1,pos2+1,pos3],
+                    sparse_data[pos1,pos2,pos3-1],sparse_data[pos1,pos2,pos3+1]]
+            sparse_data[pos1,pos2,pos3] = sum(neigh_info)/(np.array(neigh_info)>0).sum()
+            ori_missloc.append((pos1,pos2,pos3))
+        return sparse_data
+            
+    Arr = [set(arr.tolist()) for arr in M_pos]
+    Arr_len = [len(arr) for arr in Arr]
+    Arr_short = Arr_len.index(min(Arr_len))
+    sparse_data = np.delete(sparse_data,Arr[Arr_short],Arr_short])
+    return sparse_data,ori_missloc
+
 
 #预填充，这里采用同一线圈同一时段不同日期的平均数填充
 def pre_impute(sparse_data,miss_loc,W,bias_bool = False):
@@ -418,13 +434,8 @@ if __name__ == '__main__':
     #广州数据
     
     ori_speeddata = scio.loadmat('/home/qiushye/GZ_data/speed_tensor.mat')['tensor']
+    ori_speeddata = deal_orimiss(ori_speeddata,'True')
     data_size = np.shape(ori_speeddata)
-    for i in range(data_size[0]):
-        for j in range(data_size[1]):
-            for k in range(data_size[2]):
-                if ori_speeddata[i,j,k] == 0:
-                    ori_speeddata[i,j,k] = np.sum(ori_speeddata[:,j,k])/(ori_speeddata[:,j,k]>0).sum()
-    
     compare_mr(ori_speeddata)
     #tkcp_res()
     sys.exit()
