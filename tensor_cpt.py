@@ -1,5 +1,7 @@
-#encoding='utf=8'
+#encoding=utf=8
 import sktensor
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 import sys
@@ -57,7 +59,10 @@ def norm_data(data_input):
     return data
 
 #处理原始的缺失数据
-def deal_orimiss(sparse_data,shorten = 'True'):
+def deal_orimiss(ori_data,shorten = 'True'):
+    p,q,r = ori_data.shape
+    zero_mat = np.zeros((p,q,r))
+    sparse_data = (ori_data>1)*ori_data+(ori_data<=1)*zero_mat
     W = sparse_data>0
     W_miss = sparse_data<=0
     ori_missloc = []
@@ -74,7 +79,7 @@ def deal_orimiss(sparse_data,shorten = 'True'):
     Arr = [set(arr.tolist()) for arr in M_pos]
     Arr_len = [len(arr) for arr in Arr]
     Arr_short = Arr_len.index(min(Arr_len))
-    sparse_data = np.delete(sparse_data,Arr[Arr_short],Arr_short])
+    sparse_data = np.delete(sparse_data,list(Arr[Arr_short]),Arr_short)
     return sparse_data,ori_missloc
 
 
@@ -280,8 +285,8 @@ def compare_mr(ori_speeddata):
     MP_lr_l,MP_silr_l,MP_halr_l = [],[],[]
     R_l,MA_l,MP_l = [],[],[]
     miss_list = []
-    for i in range(4):
-        miss_ratio = 0.05*(i+1)
+    for i in range(1):
+        miss_ratio = 0.1*(i+1)
         miss_list.append(miss_ratio)
         miss_path = data_dir+'miss_'+'_'.join([str(ch) for ch in data_size])+'_test.mat'
         #if not os.path.exists(miss_path):
@@ -312,14 +317,14 @@ def compare_mr(ori_speeddata):
         MA_cp_l.append(MAE_cp)
         MP_cp_l.append(MAPE_cp)
         
-        alpha = [1/3,1/3,1/3]
+        alpha = [1.0/3,1.0/3,1.0/3]
         beta = [0.1,0.1,0.1]
-        beta1 = beta.copy()
+        beta1 = [0.1,0.1,0.1]
         gama = [2,2,2]
         lou = 1e-3
         K = 100
         conv = 1e-4
-        est_lrtc = lrtc_cpt(miss_data,miss_pos,beta,alpha,gama,conv,K,W)
+        est_lrtc = lrtc_cpt(miss_data,miss_pos,alpha,beta,gama,conv,K,W)
         RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,miss_pos)
         R_lr_l.append(RMSE_lrtc)
         MA_lr_l.append(MAE_lrtc)
@@ -348,7 +353,7 @@ def compare_mr(ori_speeddata):
             ax.plot(miss_list,eva_dict[eva][i],shape[i],label=name_l[i])
         ax.legend(loc='best')
         plt.savefig(img_dir+'compare_mr_'+eva+'.png')
-        fig.close()
+        plt.close()
     '''
     fig = plt.figure()
     ax = fig.add_subplot(1,1,1)
@@ -433,9 +438,11 @@ if __name__ == '__main__':
     #ori_speeddata = scio.loadmat(ori_path)['Occu']
     #广州数据
     
-    ori_speeddata = scio.loadmat('/home/qiushye/GZ_data/speed_tensor.mat')['tensor']
-    ori_speeddata = deal_orimiss(ori_speeddata,'True')
+    #ori_speeddata = scio.loadmat('/home/qiushye/GZ_data/speed_tensor.mat')['tensor']
+    ori_speeddata = scio.loadmat('../GZ_data/speed_tensor.mat')['tensor'][:20]
+    ori_speeddata,ori_missloc = deal_orimiss(ori_speeddata,'True')
     data_size = np.shape(ori_speeddata)
+    print(data_size)
     compare_mr(ori_speeddata)
     #tkcp_res()
     sys.exit()

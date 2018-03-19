@@ -1,3 +1,4 @@
+#encoding=utf-8
 import sktensor
 import time
 #import os
