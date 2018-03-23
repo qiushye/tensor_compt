@@ -72,7 +72,7 @@ def cp_cpt(sparse_data,miss_loc,rank):
     return est_data
 
 #LRTCµÄÌî³ä·½·¨
-def lrtc_cpt(sparse_data,miss_loc,alpha,beta,gama,conv_thre,K,W):
+def lrtc_cpt(sparse_data,miss_loc,alpha,beta,gama,conv_thre,K):
     time_s = time.time()
     Y = sparse_data.copy()
     N = len(np.shape(sparse_data))
@@ -148,7 +148,7 @@ def halrtc_cpt(sparse_data,miss_loc,lou,conv_thre,K,W):
     N = len(np.shape(X))
     W1 = (W==False)
     M = {}
-    alpha = np.array([1/N]).repeat(N)
+    alpha = np.array([1.0/N]).repeat(N)
     SD = dtensor(X)
     for _ in range(N):
         Y[_] = dtensor(np.zeros(np.shape(X)))
@@ -158,7 +158,8 @@ def halrtc_cpt(sparse_data,miss_loc,lou,conv_thre,K,W):
     for iter in range(K):
         X_pre = X.copy()
         for i in range(N):
-            Matrix = SD.unfold(i)+1/lou*Y[i].unfold(i)
+            SD = dtensor(X_pre)
+            Matrix = SD.unfold(i)+1/lou*(Y[i].unfold(i))
             U,sigma,VT = np.linalg.svd(Matrix)  
             row_s = len(sigma)
             mat_sig = np.zeros((row_s,row_s))
@@ -168,11 +169,12 @@ def halrtc_cpt(sparse_data,miss_loc,lou,conv_thre,K,W):
         T_temp = (np.sum([M[j]-1/lou*Y[i] for j in range(N)],axis=0))/N
         X = X*W+T_temp*W1
         X_Fnorm = np.sum((X-X_pre)**2)
-        if X_Fnorm < conv_thre:
-            break
+        #if X_Fnorm < conv_thre:
+        #    break
         for i in range(N):
             Y[i] -= lou*(M[i]-X)
     time_e = time.time()
     print('-'*8+'halrtc'+'-'*8)
     print('exec_time:'+str(time_e-time_s)+'s')
+    print((X!=sparse_data).sum())
     return X
