@@ -1,4 +1,5 @@
 #encoding=utf-8
+import scipy
 import sktensor
 import time
 #import os
@@ -36,10 +37,16 @@ def tucker_cpt(sparse_data,miss_loc,rank_list,W):
     est_data = sparse_data.copy()
     dshape = np.shape(est_data)
     SD = dtensor(est_data)
-    U = tucker.hosvd(SD,rank_list)
+    #U = tucker.hosvd(SD,rank_list)
     core1,U1 = tucker.hooi(SD,rank_list,init='nvecs')
+    #print('mean,var',np.mean(core1.unfold(0)),core1.var)
+    #print('U_mean',(U1[0]==0).max())
+    left1 = SD.unfold(0)
+    U_1,sigma,VT = np.linalg.svd(left1)
+    #print(np.sum(U1[0]-U_1))
     #ttm:¾ØÕó³Ë·¨
     ttm_data = core1.ttm(U1[0],0).ttm(U1[1],1).ttm(U1[2],2)
+    #print(np.mean(ttm_data))
     miss_sum = 0
     for _set in miss_loc:
         i,j,k = _set
@@ -49,6 +56,21 @@ def tucker_cpt(sparse_data,miss_loc,rank_list,W):
     print('-'*8+'tucker'+'-'*8)
     print('exec_time:'+str(time_e-time_s)+'s')
     return est_data
+
+def multi_tucker(sparse_data,rates,miss_loc,W):
+    SD = dtensor(sparse_data)
+    est_dict = {}
+    for rate in rates:
+        rank_set = [0,0,0]
+        for i in range(3):
+            U,sigma,VT = scipy.linalg.svd(SD.unfold(i))
+            for r in range(len(sigma)):
+                if sum(sigma[:r])/sum(sigma) > rate:
+                    rank_set[i] = r
+                    break
+        print(rank_set)
+        est_dict[rate] = tucker_cpt(sparse_data,miss_loc,rank_set,W)
+    return est_dict
 
 #STDÌî³ä
 def STD_cpt(sparse_data,miss_loc,U_dict,r_dict,W):
@@ -86,16 +108,24 @@ def lrtc_cpt(sparse_data,miss_loc,alpha,beta,gama,conv_thre,K):
     for iter in range(K):
         Y_pre = Y.copy()
         for n in range(N):
+            
             MX[n] = dtensor(X).unfold(n)
             MY[n] = dtensor(Y).unfold(n)
             M_temp = (alpha[n]*MX[n]+beta[n]*MY[n])/(alpha[n]+beta[n])
+            
+            #U = tucker.hosvd(M_temp,M_temp.shape)
+            #core,U1 = tucker.hooi(M_temp,M_temp.shape,init='nvecs')
+            
             para_fi = gama[n]/(alpha[n]+beta[n])
             U,sigma,VT = np.linalg.svd(M_temp)
             row_s = len(sigma)
             mat_sig = np.zeros((row_s,row_s))
             max_rank = 0
             for ii in range(row_s):
-                mat_sig[ii,ii] = max(sigma[ii]-para_fi,0)
+                #mat_sig[ii,ii] = max(sigma[ii]-para_fi,0)
+                mat_sig[ii,ii] = sigma[ii]
+                if sum(sigma[:ii])/sum(sigma) > 0.7:
+                    break
             M[n] = np.dot(np.dot(U[:,:row_s],mat_sig),VT[:row_s,:])
             M_fold[n] = M[n].fold()
         X = np.sum([alpha[i]*M_fold[i] for i in range(N)],axis=0)/sum(alpha)
@@ -127,7 +157,10 @@ def silrtc_cpt(sparse_data,miss_loc,alpha,beta,conv_thre,K):
             row_s = len(sigma)
             mat_sig = np.zeros((row_s,row_s))
             for ii in range(row_s):
-                mat_sig[ii,ii] = max(sigma[ii]-para_fi,0)
+                #mat_sig[ii,ii] = max(sigma[ii]-para_fi,0)
+                mat_sig[ii,ii] = sigma[ii]
+                if sum(sigma[:ii])/sum(sigma) > 0.7:
+                    break
             M[i] = (np.dot(np.dot(U,mat_sig),VT[:row_s,:])).fold()
         X_temp = np.sum([beta[j]*M[j] for j in range(N)],axis=0)/sum(beta)
         for _set in miss_loc:
@@ -164,13 +197,16 @@ def halrtc_cpt(sparse_data,miss_loc,lou,conv_thre,K,W):
             row_s = len(sigma)
             mat_sig = np.zeros((row_s,row_s))
             for ii in range(row_s):
-                mat_sig[ii,ii] = max(sigma[ii]-alpha[i]/lou,0)
+            #    mat_sig[ii,ii] = max(sigma[ii]-alpha[i]/lou,0)
+                mat_sig[ii,ii] = sigma[ii]
+                if sum(sigma[:ii])/sum(sigma) > 0.7:
+                    break
             M[i] = (np.dot(np.dot(U,mat_sig),VT[:row_s,:])).fold()
         T_temp = (np.sum([M[j]-1/lou*Y[i] for j in range(N)],axis=0))/N
         X = X*W+T_temp*W1
         X_Fnorm = np.sum((X-X_pre)**2)
-        #if X_Fnorm < conv_thre:
-        #    break
+        if X_Fnorm < conv_thre:
+            break
         for i in range(N):
             Y[i] -= lou*(M[i]-X)
     time_e = time.time()
