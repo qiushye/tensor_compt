@@ -48,16 +48,19 @@ def gene_cont_sparse(ori_data,miss_radio,miss_file):
 
 #获取缺失数据，缺失位置和真实缺失率
 def get_sparsedata(miss_file):
-    miss_loc = []
+    #miss_loc = []
     sparse_data = scio.loadmat(miss_file)['Speed']
     dshape = np.shape(sparse_data)
+    W_miss = sparse_data==0
+    '''
     for i in range(dshape[0]):
         for j in range(dshape[1]):
             for k in range(dshape[2]):
                 if sparse_data[i,j,k] == 0:
                     miss_loc.append((i,j,k))
-    true_miss_radio = len(miss_loc)/sparse_data.size
-    return sparse_data,miss_loc,true_miss_radio
+    '''
+    true_miss_radio = W_miss.sum()/sparse_data.size
+    return sparse_data,W_miss,true_miss_radio
 
 #将数据标准化，除以线圈维度的2范数
 def norm_data(data_input):
@@ -84,25 +87,33 @@ def deal_orimiss(ori_data,shorten = True):
     if not shorten:
         for i in range(len(W_miss[0])):
             pos1,pos2,pos3 = W_miss[0][i],W_miss[1][i],W_miss[2][i]
-            neigh_info = [sparse_data[pos1,pos2-1,pos3],sparse_data[pos1,pos2+1,pos3],
-                    sparse_data[pos1,pos2,pos3-1],sparse_data[pos1,pos2,pos3+1]]
+            neigh_info = []
+            for n2 in (1,-1):
+                for n3 in (1,-1):
+                    try:
+                        neigh_info.append(sparse_data[pos1,pos2+n2,pos3+n3])
+                    except:
+                        pass
+            #neigh_info = [sparse_data[pos1,pos2-1,pos3],sparse_data[pos1,pos2+1,pos3],
+                    #sparse_data[pos1,pos2,pos3-1],sparse_data[pos1,pos2,pos3+1]]
             sparse_data[pos1,pos2,pos3] = sum(neigh_info)/(np.array(neigh_info)>0).sum()
             ori_missloc.append((pos1,pos2,pos3))
-        return sparse_data,ori_missloc
+        return sparse_data,W
             
     Arr = [set(arr.tolist()) for arr in M_pos]
     Arr_len = [len(arr) for arr in Arr]
     Arr_short = Arr_len.index(min(Arr_len))
     sparse_data = np.delete(sparse_data,list(Arr[Arr_short]),Arr_short)
-    return sparse_data,ori_missloc
+    return sparse_data,W
 
 
 #预填充，这里采用同一线圈同一时段不同日期的平均数填充
-def pre_impute(sparse_data,miss_loc,W,bias_bool = False):
+def pre_impute(sparse_data,W,bias_bool = False):
     if not bias_bool:
-        for _set in miss_loc:
-            i,j,k = _set
-            sparse_data[i,j,k] = np.sum(sparse_data[:,j,k])/(sparse_data[:,j,k]>0).sum()
+        pos = np.where(W==False)
+        for p in range(len(pos[0])):
+            i,j,k = pos[0][p],pos[1][p],pos[2][p]
+            sparse_data[i,j,k] = np.sum(sparse_data[i,:,k])/(sparse_data[i,:,k]>0).sum()
         return sparse_data
     b,b1 = {},{}
     sp = np.shape(sparse_data)
@@ -137,15 +148,18 @@ def pre_impute(sparse_data,miss_loc,W,bias_bool = False):
         if abs(J-J_pre) < 1:
             break
     print(np.sum(W*(sparse_data-impute_data)**2))
-    for _set in miss_loc:
-        i,j,k = _set
-        sparse_data[i,j,k] = mean+b[0][i]+b[1][j]+b[2][k]
+    sparse_data[W==False] = mean+b[0][i]+b[1][j]+b[2][k]
+    '''
+    for _set in np.where(W==0):
+        sparse_data[_set] = mean+b[0][i]+b[1][j]+b[2][k]
+    '''
     return sparse_data
 
 #求rmse,mape和rse
-def rmse_mape_rse(est_data,ori_data,miss_loc):
+def rmse_mape_rse(est_data,ori_data,W):
     S = np.shape(est_data)
     diff_data = np.zeros(S)
+    '''
     for i in range(S[0]):
         for j in range(S[1]):
             for k in range(S[2]):
@@ -153,15 +167,16 @@ def rmse_mape_rse(est_data,ori_data,miss_loc):
                     diff_data[i,j,k] = est_data[i,j,k]-ori_data[i,j,k]
                 else:
                     diff_data[i,j,k] = 0
-
+    '''
+    W_miss = (W==False)
+    diff_data = np.zeros(S)+W_miss*(est_data-ori_data)
     #diff_data = ori_data-est_data
-    rmse = float((np.sum(diff_data**2)/len(miss_loc))**0.5)
+    rmse = float((np.sum(diff_data**2)/W_miss.sum())**0.5)
     mre_mat=np.zeros_like(est_data)
-    elig_ind=np.where(diff_data!=0)
-    mre_mat[elig_ind]=np.abs((est_data[elig_ind]-ori_data[elig_ind])/ori_data[elig_ind])
-    mape = np.sum(mre_mat)/len(miss_loc)
+    mre_mat[W_miss]=np.abs((est_data[W_miss]-ori_data[W_miss])/ori_data[W_miss])
+    mape = float(np.sum(mre_mat)/W_miss.sum())
     rse = float(np.sum(diff_data**2)**0.5/np.sum(ori_data**2)**0.5)
-    mae = float(np.sum(np.abs(diff_data))/len(miss_loc))
+    mae = float(np.sum(np.abs(diff_data))/W_miss.sum())
     return round(rmse,4),round(mape,4),round(rse,4),round(mae,4)
 
 def show_img(X,RMSE_list,MAE_list,name_list):
@@ -190,8 +205,8 @@ def compare_iter(ori_speeddata,miss_data,miss_pos,W):
                 if sum(sigma[:r])/sum(sigma) > main_rate:
                     rank_set[i] = r
                     break
-        est_tucker = tucker_cpt(miss_data,miss_pos,rank_set,W)
-        RMSE_tk,MAPE_tk,RSE_tk,MAE_tk = rmse_mape_rse(est_tucker,ori_speeddata,miss_pos)
+        est_tucker = tucker_cpt(miss_data,rank_set,W)
+        RMSE_tk,MAPE_tk,RSE_tk,MAE_tk = rmse_mape_rse(est_tucker,ori_speeddata,W)
         RMSE_tk_list.append(RMSE_tk)
         MAE_tk_list.append(MAE_tk)
     show_img(tk_range_list,[RMSE_tk_list],[MAE_tk_list],['tk'])
@@ -200,8 +215,8 @@ def compare_iter(ori_speeddata,miss_data,miss_pos,W):
     cp_range_list = list(range(int(0.25*min(sp)),int(0.75*min(sp))))
     RMSE_cp_list,MAE_cp_list = [],[]
     for cp_rank in cp_range_list:
-        est_cp = cp_cpt(miss_data,miss_pos,cp_rank)
-        RMSE_cp,MAPE_cp,RSE_cp,MAE_cp = rmse_mape_rse(est_cp,ori_speeddata,miss_pos)
+        est_cp = cp_cpt(miss_data,cp_rank,W)
+        RMSE_cp,MAPE_cp,RSE_cp,MAE_cp = rmse_mape_rse(est_cp,ori_speeddata,W)
         RMSE_cp_list.append(RMSE_cp)
         MAE_cp_list.append(MAE_cp)
     show_img(cp_range_list,[RMSE_cp_list],[MAE_cp_list],['cp'])
@@ -221,16 +236,16 @@ def compare_iter(ori_speeddata,miss_data,miss_pos,W):
     '''
     range_list = K_list
     for K in K_list:
-        est_lrtc = lrtc_cpt(miss_data,miss_pos,beta,alpha,gama,conv,K,W)
-        RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,miss_pos)
+        est_lrtc = lrtc_cpt(miss_data,beta,alpha,gama,conv,K,W)
+        RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,W)
         RMSE_lrtc_list.append(RMSE_lrtc)
         MAE_lrtc_list.append(MAE_lrtc)
-        est_silrtc = silrtc_cpt(miss_data,miss_pos,alpha,beta1,conv,K)
-        RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,miss_pos)
+        est_silrtc = silrtc_cpt(miss_data,alpha,beta1,conv,K)
+        RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,W)
         RMSE_silrtc_list.append(RMSE_silrtc)
         MAE_silrtc_list.append(MAE_silrtc)
-        est_halrtc = halrtc_cpt(miss_data,miss_pos,lou,conv,K,W)
-        RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,miss_pos)
+        est_halrtc = halrtc_cpt(miss_data,lou,conv,K,W)
+        RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,W)
         RMSE_halrtc_list.append(RMSE_halrtc)
         MAE_halrtc_list.append(MAE_halrtc)
     RMSE_tc = [RMSE_lrtc_list,RMSE_silrtc_list,RMSE_halrtc_list]
@@ -257,16 +272,16 @@ def compare_iter(ori_speeddata,miss_data,miss_pos,W):
     RMSE_halrtc_list,MAE_halrtc_list = [],[]
     range_list = conv_list
     for conv in conv_list:
-        est_lrtc = lrtc_cpt(miss_data,miss_pos,beta,alpha,gama,conv,K,W)
-        RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,miss_pos)
+        est_lrtc = lrtc_cpt(miss_data,beta,alpha,gama,conv,K,W)
+        RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,W)
         RMSE_lrtc_list.append(RMSE_lrtc)
         MAE_lrtc_list.append(MAE_lrtc)
-        est_silrtc = silrtc_cpt(miss_data,miss_pos,alpha,beta1,conv,K)
-        RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,miss_pos)
+        est_silrtc = silrtc_cpt(miss_data,alpha,beta1,conv,K)
+        RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,W)
         RMSE_silrtc_list.append(RMSE_silrtc)
         MAE_silrtc_list.append(MAE_silrtc)
-        est_halrtc = halrtc_cpt(miss_data,miss_pos,lou,conv,K,W)
-        RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,miss_pos)
+        est_halrtc = halrtc_cpt(miss_data,lou,conv,K,W)
+        RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,W)
         RMSE_halrtc_list.append(RMSE_halrtc)
         MAE_halrtc_list.append(MAE_halrtc)
     fig = plt.figure()
@@ -290,7 +305,7 @@ def compare_iter(ori_speeddata,miss_data,miss_pos,W):
     #show_img(K_list,RMSE_tc,MAE_tc,['lrtc','silrtc','halrtc'])
     return 0
 
-def compare_mr(ori_speeddata,ori_missloc):
+def compare_mr(ori_speeddata,ori_W):
     R_pre_l,R_tk_l,R_cp_l = [],[],[]
     R_lr_l,R_silr_l,R_halr_l = [],[],[]
     MA_pre_l,MA_tk_l,MA_cp_l = [],[],[]
@@ -309,8 +324,8 @@ def compare_mr(ori_speeddata,ori_missloc):
         W = miss_data>0
         miss_data = pre_impute(miss_data,miss_pos,W,False)
         print(np.mean(ori_speeddata),np.mean(miss_data))
-        rmiss_pos = list(set(miss_pos)-set(ori_missloc))
-        RMSE_pre,MAPE_pre,RSE_pre,MAE_pre = rmse_mape_rse(miss_data,ori_speeddata,rmiss_pos)
+        rW = W|ori_W
+        RMSE_pre,MAPE_pre,RSE_pre,MAE_pre = rmse_mape_rse(miss_data,ori_speeddata,rW)
         R_pre_l.append(RMSE_pre)
         MA_pre_l.append(MAE_pre)
         MP_pre_l.append(MAPE_pre)
@@ -322,14 +337,14 @@ def compare_mr(ori_speeddata,ori_missloc):
                 if sum(sigma[:r])/sum(sigma) > 0.9:
                     rank_set[i] = r
                     break
-        est_tucker = tucker_cpt(miss_data,miss_pos,rank_set,W)
-        RMSE_tk,MAPE_tk,RSE_tk,MAE_tk = rmse_mape_rse(est_tucker,ori_speeddata,rmiss_pos)
+        est_tucker = tucker_cpt(miss_data,rank_set,W)
+        RMSE_tk,MAPE_tk,RSE_tk,MAE_tk = rmse_mape_rse(est_tucker,ori_speeddata,rW)
         
         R_tk_l.append(RMSE_tk)
         MA_tk_l.append(MAE_tk)
         MP_tk_l.append(MAPE_tk)
-        est_cp = cp_cpt(miss_data,miss_pos,cp_a)
-        RMSE_cp,MAPE_cp,RSE_cp,MAE_cp = rmse_mape_rse(est_cp,ori_speeddata,rmiss_pos)
+        est_cp = cp_cpt(miss_data,cp_a,W)
+        RMSE_cp,MAPE_cp,RSE_cp,MAE_cp = rmse_mape_rse(est_cp,ori_speeddata,rW)
         R_cp_l.append(RMSE_cp)
         MA_cp_l.append(MAE_cp)
         MP_cp_l.append(MAPE_cp)
@@ -342,21 +357,21 @@ def compare_mr(ori_speeddata,ori_missloc):
         K = 100
         conv = 1e-4
         
-        est_lrtc = lrtc_cpt(miss_data,miss_pos,alpha,beta,gama,conv,K)
-        RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,rmiss_pos)
+        est_lrtc = lrtc_cpt(miss_data,alpha,beta,gama,conv,K)
+        RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,rW)
         #print(RMSE_lrtc)
         #sys.exit()
         R_lr_l.append(RMSE_lrtc)
         MA_lr_l.append(MAE_lrtc)
         MP_lr_l.append(MAPE_lrtc)
-        est_silrtc = silrtc_cpt(miss_data,miss_pos,alpha,beta1,conv,K)
-        RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,rmiss_pos)
+        est_silrtc = silrtc_cpt(miss_data,alpha,beta1,conv,K)
+        RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,rW)
         R_silr_l.append(RMSE_silrtc)
         MA_silr_l.append(MAE_silrtc)
         MP_silr_l.append(MAPE_silrtc)
         
-        est_halrtc = halrtc_cpt(miss_data,miss_pos,lou,conv,K,W)
-        RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,rmiss_pos)
+        est_halrtc = halrtc_cpt(miss_data,lou,conv,K,W)
+        RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,rW)
         print('rmse:',RMSE_halrtc)
         R_halr_l.append(RMSE_halrtc)
         MA_halr_l.append(MAE_halrtc)
@@ -398,10 +413,10 @@ def tkcp_res():
                     rank_set[i] = r
                     break
 
-        est_tucker = tucker_cpt(miss_data,miss_pos,rank_set,W)
+        est_tucker = tucker_cpt(miss_data,rank_set,W)
         RMSE_tk,MAPE_tk,RSE_tk,MAE_tk = rmse_mape_rse(est_tucker,ori_speeddata,miss_pos)
         fw.write('tucker填充: RMSE,MAPE,MAE='+str(RMSE_tk)+','+str(MAPE_tk)+','+str(MAE_tk)+'\n')
-        est_cp = cp_cpt(miss_data,miss_pos,6)
+        est_cp = cp_cpt(miss_data,6,W)
         RMSE_cp,MAPE_cp,RSE_cp,MAE_cp = rmse_mape_rse(est_cp,ori_speeddata,miss_pos)
         fw.write('cp填充: RMSE,MAPE,MAE='+str(RMSE_cp)+','+str(MAPE_cp)+','+str(MAE_cp)+'\n')
     fw.close()
@@ -430,7 +445,7 @@ if __name__ == '__main__':
     #ori_speeddata = scio.loadmat('/home/qiushye/GZ_data/speed_tensor.mat')['tensor']
     ori_speeddata = scio.loadmat('../GZ_data/speed_tensor.mat')['tensor'][:20]
     shorten = False
-    ori_speeddata,ori_missloc = deal_orimiss(ori_speeddata,shorten)
+    ori_speeddata,ori_W = deal_orimiss(ori_speeddata,shorten)
     data_size = np.shape(ori_speeddata)
     #compare_mr(ori_speeddata,ori_missloc)
     
@@ -440,56 +455,57 @@ if __name__ == '__main__':
     #miss_path = data_dir+'cont_miss_'+'_'.join([str(ch) for ch in data_size])+'.mat'
     gene_rand_sparse(ori_speeddata,miss_radio,miss_path)
     #gene_cont_sparse(ori_speeddata,miss_radio,miss_path)
-    miss_data,miss_pos,tm_radio = get_sparsedata(miss_path)
+    miss_data,W,tm_radio = get_sparsedata(miss_path)
     W = miss_data>0
     W1 = miss_data==0
     rank_set = [0,0,0]
     data_shape = np.shape(ori_speeddata)
     #ori_speeddata = norm_data(ori_speeddata)
     #miss_data = norm_data(miss_data)
-    miss_data = pre_impute(miss_data,miss_pos,W)
+    miss_data = pre_impute(miss_data,W)
     #compare_iter(ori_speeddata,miss_data,miss_pos,W)
     #sys.exit()
-    RMSE_pre,MAPE_pre,RSE_pre,MAE_pre = rmse_mape_rse(miss_data,ori_speeddata,miss_pos)
+    RMSE_pre,MAPE_pre,RSE_pre,MAE_pre = rmse_mape_rse(miss_data,ori_speeddata,W)
     print('RMSE_pre,MAE_pre,MAPE_pre',RMSE_pre,MAE_pre,MAPE_pre)
+    '''
     rates = 0.5 + np.array(range(8))*0.05
     est_multi = multi_tucker(miss_data,rates,miss_pos,W)
     est_data = sum([rate * est_multi[rate] for rate in est_multi])/sum(est_multi.keys())
     print([rmse_mape_rse(est,ori_speeddata,miss_pos) for est in est_multi.values()])
     print('rmse_mape_rse_mae',rmse_mape_rse(est_data,ori_speeddata,miss_pos))
     sys.exit()
+    '''
     for i in range(3):
         U,sigma,VT = scipy.linalg.svd(dtensor(miss_data).unfold(i))
         for r in range(len(sigma)):
             if sum(sigma[:r])/sum(sigma) > 0.9:
                 rank_set[i] = r
                 break
-    print('ori_mean:',np.sum(ori_speeddata)/np.cumprod(data_size)[-1])
+    print('ori_mean:',np.sum(ori_speeddata)/ori_speeddata.size)
     
-    est_tucker = tucker_cpt(miss_data,miss_pos,rank_set,W)
-    RMSE_tk,MAPE_tk,RSE_tk,MAE_tk = rmse_mape_rse(est_tucker,ori_speeddata,miss_pos)
+    est_tucker = tucker_cpt(miss_data,rank_set,W)
+    RMSE_tk,MAPE_tk,RSE_tk,MAE_tk = rmse_mape_rse(est_tucker,ori_speeddata,W)
     print('RMSE_tk,MAE_tk,MAPE_tk',RMSE_tk,MAE_tk,MAPE_tk)
-    est_cp = cp_cpt(miss_data,miss_pos,15)
-    RMSE_cp,MAPE_cp,RSE_cp,MAE_cp = rmse_mape_rse(est_cp,ori_speeddata,miss_pos)
+    est_cp = cp_cpt(miss_data,15,W)
+    RMSE_cp,MAPE_cp,RSE_cp,MAE_cp = rmse_mape_rse(est_cp,ori_speeddata,W)
     print('RMSE_cp,MAE_cp,MAPE_cp',RMSE_cp,MAE_cp,MAPE_cp)
-    sys.exit()
     alpha = [1/3,1/3,1/3]
     beta = [0.1,0.1,0.1]
     beta1 = [0.1,0.1,0.1]
-    gama = [3,3,3]
+    gama = [2,2,2]
     lou = 1e-3
     K = 100
-    conv = 1e-4
-    '''
-    est_lrtc = lrtc_cpt(miss_data,miss_pos,beta,alpha,gama,conv,K,W)
-    RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,miss_pos)
+    conv = 1e-5
+    #sys.exit()
+    
+    est_lrtc = lrtc_cpt(miss_data,beta,alpha,gama,conv,K,W)
+    RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,W)
     print('RMSE_lrtc,MAE_lrtc',RMSE_lrtc,MAE_lrtc)
     #sys.exit()
-    est_silrtc = silrtc_cpt(miss_data,miss_pos,alpha,beta1,conv,K)
-    RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,miss_pos)
+    est_silrtc = silrtc_cpt(miss_data,alpha,beta1,conv,K,W)
+    RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,W)
     print('RMSE_si,MAE_si',RMSE_silrtc,MAE_silrtc)
-    '''
-    est_halrtc = halrtc_cpt(miss_data,miss_pos,lou,conv,K,W)
-    RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,miss_pos)
-    print('RMSE_ha,MAE_ha,MAPE:%s %s %s' % (RMSE_halrtc,MAE_halrtc,MAPE_halrtc),file = open('halrtc.txt'))
     
+    est_halrtc = halrtc_cpt(miss_data,lou,conv,K,W)
+    RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,W)
+    print('RMSE_ha,MAE_ha,MAPE', (RMSE_halrtc,MAE_halrtc,MAPE_halrtc))
