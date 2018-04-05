@@ -1,4 +1,5 @@
 #encoding=utf-8
+import random
 import scipy
 import sktensor
 import time
@@ -196,11 +197,13 @@ def halrtc_cpt(sparse_data,lou,conv_thre,K,W):
         T_temp = (np.sum([M[j]-1/lou*Y[i] for j in range(N)],axis=0))/N
         X[W1] = T_temp[W1]
         X_Fnorm = np.sum((X-X_pre)**2)
-        #if X_Fnorm < conv_thre:
-        #    break
+        if X_Fnorm < conv_thre:
+            break
         for i in range(N):
             Y[i] -= lou*(M[i]-X)
     time_e = time.time()
     print('-'*8+'halrtc'+'-'*8)
     print('exec_time:'+str(time_e-time_s)+'s')
     return X
+
+

@@ -1,4 +1,4 @@
-#encoding=utf=8
+#encoding=utf-8
 import sktensor
 import matplotlib
 matplotlib.use("Agg")
@@ -12,6 +12,7 @@ np.seterr(divide='ignore', invalid='ignore')
 from random import random
 from scipy.sparse import rand as sprand
 from compt_methods import *
+from road_similar import *
 
 #根据确定的数据维度大小获取数据，对于缺失部分补平均数
 def get_tensor(mat_file,ori_file,size_=0):
@@ -463,8 +464,10 @@ if __name__ == '__main__':
     #ori_speeddata = norm_data(ori_speeddata)
     #miss_data = norm_data(miss_data)
     miss_data = pre_impute(miss_data,W)
+    print(np.isnan(ori_speeddata).sum())
+    road_Kmeans(ori_speeddata,ori_W,4,W)
     #compare_iter(ori_speeddata,miss_data,miss_pos,W)
-    #sys.exit()
+    sys.exit()
     RMSE_pre,MAPE_pre,RSE_pre,MAE_pre = rmse_mape_rse(miss_data,ori_speeddata,W)
     print('RMSE_pre,MAE_pre,MAPE_pre',RMSE_pre,MAE_pre,MAPE_pre)
     '''
