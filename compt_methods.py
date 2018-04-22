@@ -169,19 +169,21 @@ def silrtc_cpt(sparse_data,alpha,beta,conv_thre,K,W):
     print('exec_time:'+str(time_e-time_s)+'s')
     return X
 
-def halrtc_cpt(sparse_data,lou,conv_thre,K,W):
+def halrtc_cpt(sparse_data,lou,conv_thre,K,W,fb,feedback=False):
     time_s = time.time()
     X = sparse_data.copy()
     Y = {}
     N = len(np.shape(X))
     W1 = (W==False)
     M = {}
+    T_temp = X.copy()
     alpha = np.array([1.0/N]).repeat(N)
     SD = dtensor(X)
     for _ in range(N):
         Y[_] = dtensor(np.zeros(np.shape(X)))
     for iter in range(K):
         X_pre = X.copy()
+        T_temp_pre = T_temp.copy()
         for i in range(N):
             SD = dtensor(X_pre)
             Matrix = SD.unfold(i)+1/lou*(Y[i].unfold(i))
@@ -196,6 +198,10 @@ def halrtc_cpt(sparse_data,lou,conv_thre,K,W):
             M[i] = (np.dot(np.dot(U,mat_sig),VT[:row_s,:])).fold()
         T_temp = (np.sum([M[j]-1/lou*Y[i] for j in range(N)],axis=0))/N
         X[W1] = T_temp[W1]
+        if feedback == True:
+            #print(np.mean(X_pre[W]-T_temp[W]))
+            X[W] = sparse_data[W]+fb*(X_pre[W]-T_temp[W])
+        #print((X == X_pre).all())
         X_Fnorm = np.sum((X-X_pre)**2)
         if X_Fnorm < conv_thre:
             break
