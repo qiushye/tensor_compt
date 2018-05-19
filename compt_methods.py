@@ -169,7 +169,7 @@ def silrtc_cpt(sparse_data,alpha,beta,conv_thre,K,W):
     print('exec_time:'+str(time_e-time_s)+'s')
     return X
 
-def halrtc_cpt(sparse_data,lou,conv_thre,K,W,fb,feedback=False):
+def halrtc_cpt(sparse_data,lou,conv_thre,K,W,fb=0,feedback=False):
     time_s = time.time()
     X = sparse_data.copy()
     Y = {}
@@ -208,8 +208,8 @@ def halrtc_cpt(sparse_data,lou,conv_thre,K,W,fb,feedback=False):
         for i in range(N):
             Y[i] -= lou*(M[i]-X)
     time_e = time.time()
-    print('-'*8+'halrtc'+'-'*8)
-    print('exec_time:'+str(time_e-time_s)+'s')
+    #print('-'*8+'halrtc'+'-'*8)
+    #print('exec_time:'+str(time_e-time_s)+'s')
     return X
 
 
