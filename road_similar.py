@@ -37,12 +37,14 @@ def cos_dis(mat1,mat2):
         return -1
     ds = mat1.shape
     sim = 0
-    #°´Õû¸ö¾ØÕó¼ÆËãÓàÏÒÏàËÆ,·µ»Øµ¹Êı±íÊ¾ÖµÔ½Ğ¡Ô½ÏàËÆ
+    #ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½,ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½Ê¾ÖµÔ½Ğ¡Ô½ï¿½ï¿½ï¿½ï¿½
+    mat1 = mat1-np.mean(mat1)
+    mat2 = mat2-np.mean(mat2)
     sim = np.sum(mat1*mat2)/(np.linalg.norm(mat1)*np.linalg.norm(mat2))
     return sim
 
 def road_sim(M1,M2,sim_thre,sim_func='cos'):
-    #¼ÆËãÁ½¸öÂ·¶ÎµÄÏàËÆĞÔ
+    #ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Â·ï¿½Îµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     if len(M1) != len(M2):
         print('different length')
         return -1
@@ -68,7 +70,7 @@ def pearson_dis(mat1,mat2):
     M2 = mat2-np.mean(mat2)
     norm1 = np.linalg.norm(M1)
     norm2 = np.linalg.norm(M2)
-    sim = np.sum(M1*M2)/(norm1*norm2)
+    sim = np.mean(M1*M2)/(norm1*norm2)
     return sim
 
 def cmn_pos(sparse_data,ori_W,W,axis=0):
@@ -119,7 +121,7 @@ def road_Kmeans(sparse_data,ori_W,K_n,W,axis=0,method='Eu'):
                 if distance < min_dis:
                     min_dis = distance
                     minIndex = j
-            #ÕÒµ½×î½üµÄÖĞĞÄ
+            #ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
             if clr_assign[i,0] != minIndex:
                 clr_assign[i,:] = minIndex,min_dis
                 clr_go = True
@@ -135,15 +137,12 @@ def getWbyKNN(data_,k,w_dis,method='Eu',axis=0):
     points_num = len(data)
     dis_matrix = np.zeros((points_num,points_num))
     W = np.zeros_like(dis_matrix)
-    if method == 'multi':
-        dis_matrix = multi_sim(data,w_dis)
-    else:
-        for i in range(points_num):
-            for j in range(i+1,points_num):
-                dist = dis_method[method](data[i],data[j])
-                if method == 'Eu':
-                    dist = 1/dist
-                dis_matrix[i][j] = dis_matrix[j][i] = dist
+    for i in range(points_num):
+        for j in range(i+1,points_num):
+            dist = dis_method[method](data[i],data[j])
+            if method in ('Eu','multi'):
+                dist = 1/dist
+            dis_matrix[i][j] = dis_matrix[j][i] = dist
     for idx,each in enumerate(dis_matrix):
         index_array = np.argsort(each)
         W[idx][index_array[1:k+1]] = 1
@@ -195,7 +194,7 @@ def XC_dis(X,C,m,method):
     D = np.zeros((len(C),len(X)))
     for i in range(len(C)):
         for j in range(len(X)):
-            if method == 'Eu':
+            if method in ('Eu','multi'):
                 D[i,j] = dis_method[method](X[j],C[i])+1
             else:
                 D[i,j] = 2-dis_method[method](X[j],C[i])
@@ -211,7 +210,7 @@ def C2U(X,C,m,method):
 
 def target_func(U,X,C,m,method):
     D = XC_dis(X,C,m,method) 
-    print(np.isinf(U).all(),print(np.isinf(D).all()))
+    #print(np.isinf(U).all(),print(np.isinf(D).all()))
     J = np.sum((U**m)*(D**2))
     return J
 
@@ -231,17 +230,27 @@ def fcm(X,cluster_num,m=1.5,method='pearson'):
         cnt += 1
     return U,C
 
+def multi_dis(M1,M2,w_dis=[0.01,0.1,0.2]):
+    days, periods = M1.shape
+    X = [M1,M2]
+    para_matrix = np.zeros((2, days, 3))
+    for r in range(2):
+        para_matrix[r, :, 0] = np.linalg.svd(X[r], 0)[1]
+        para_matrix[r, :, 1] = [np.var(X[r][d]) for d in range(days)]
+        para_matrix[r, :, 2] = [np.mean(X[r][d]) for d in range(days)]
+    return sum([Eu_dis(para_matrix[0,:,i],para_matrix[1,:,i])*w_dis[i] for i in range(3)])
+
 def multi_sim(X,w_dis=[0.01,0.1,0.2]):
     roads,days,periods = X.shape
     para_matrix = np.zeros((roads,days,3))
     dis_matrix = np.zeros((roads,roads))
     for r in range(roads):
         para_matrix[r,:,0] = np.linalg.svd(X[r],0)[1]
-        para_matrix[r,:,1] = [np.var(X[r]) for d in range(days)]
-        para_matrix[r,:,2] = [np.mean(X[r]) for d in range(days)]
+        para_matrix[r,:,1] = [np.var(X[r,d]) for d in range(days)]
+        para_matrix[r,:,2] = [np.mean(X[r,d]) for d in range(days)]
     for r1 in range(roads):
         for r2 in range(roads):
             dis_matrix[r1,r2] = sum([Eu_dis(para_matrix[r1,:,i],para_matrix[r2,:,i])*w_dis[i] for i in range(3)])
     return dis_matrix
 
-dis_method = {'Eu':Eu_dis,'cos':cos_dis,'pearson':pearson_dis,'multi':multi_sim}
+dis_method = {'Eu':Eu_dis,'cos':cos_dis,'pearson':pearson_dis,'multi':multi_dis}

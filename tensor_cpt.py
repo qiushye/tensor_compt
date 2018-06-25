@@ -1,9 +1,7 @@
 #encoding=utf-8
 import sktensor
 import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-plt.switch_backend('agg')
 import sys
 import os
 import scipy.io as scio
@@ -14,6 +12,9 @@ from scipy.sparse import rand as sprand
 from compt_methods import *
 from road_similar import *
 from kernel_kmeans import KernelKMeans
+
+
+from sklearn.model_selection import train_test_split
 
 #根据确定的数据维度大小获取数据，对于缺失部分补平均数
 def get_tensor(mat_file,ori_file,size_=0):
@@ -28,7 +29,7 @@ def get_tensor(mat_file,ori_file,size_=0):
 def gene_rand_sparse(ori_data, miss_ratio,miss_file):
     data = ori_data.copy()
     dshape = np.shape(data)
-    rand_ts = np.random.rand(dshape[0],dshape[1],dshape[2])
+    rand_ts = np.random.random_sample(dshape)
     zero_ts = np.zeros(dshape)
     data = data*(rand_ts>miss_ratio) + zero_ts*(rand_ts<=miss_ratio)
     #if not os.path.exists(miss_file):
@@ -39,7 +40,7 @@ def gene_rand_sparse(ori_data, miss_ratio,miss_file):
 def gene_cont_sparse(ori_data,miss_ratio,miss_file):
     data = ori_data.copy()
     dshape = data.shape
-    rand_ts = np.random.rand(dshape[0],dshape[1])
+    rand_ts = np.random.random_sample(dshape[:-1])
     S = np.rint(rand_ts+0.5-miss_ratio)
     W_cont = np.zeros(dshape)
     for k in range(dshape[2]):
@@ -48,6 +49,7 @@ def gene_cont_sparse(ori_data,miss_ratio,miss_file):
     scio.savemat(miss_file,{'Speed':data})
     return data
 
+gene_sparse = {'rand':gene_rand_sparse,'cont':gene_cont_sparse}
 
 #获取缺失数据，缺失位置和真实缺失率
 def get_sparsedata(miss_file):
@@ -65,7 +67,6 @@ def deal_orimiss(ori_data,shorten = False):
     sparse_data = (ori_data>1)*ori_data+(ori_data<=1)*zero_mat
     W = sparse_data>0
     W_miss = np.where(sparse_data<=1)
-    ori_missloc = []
     M_pos = np.where(W_miss)
     if not shorten:
         for i in range(len(W_miss[0])):
@@ -74,11 +75,12 @@ def deal_orimiss(ori_data,shorten = False):
             for n2 in (1,-1):
                 for n3 in (1,-1):
                     try:
-                        neigh_info.append(sparse_data[pos1,pos2+n2,pos3+n3])
+                        temp = sparse_data[pos1,pos2+n2,pos3+n3]
+                        neigh_info.append(temp)
                     except:
                         pass
-            sparse_data[pos1,pos2,pos3] = sum(neigh_info)/(np.array(neigh_info)>0).sum()
-            ori_missloc.append((pos1,pos2,pos3))
+            if sum(neigh_info)>0:
+                sparse_data[pos1,pos2,pos3] = sum(neigh_info)/(np.array(neigh_info)>0).sum()
         return sparse_data,W
             
     Arr = [set(arr.tolist()) for arr in M_pos]
@@ -160,7 +162,6 @@ def pre_impute(sparse_data,W,day_axis=1,bias_bool = False):
 #求rmse,mape,mae,rse
 def rmse_mape_rse(est_data,ori_data,W):
     S = np.shape(est_data)
-    diff_data = np.zeros(S)
     W_miss = (W==False)
     diff_data = np.zeros(S)+W_miss*(est_data-ori_data)
     #diff_data = ori_data-est_data
@@ -268,123 +269,45 @@ def compare_mr(ori_speeddata,ori_W):
     eva_dict = {'rmse':RM_dict,'mae':MA_dict,'mape':MP_dict}
     for i in range(8):
         miss_ratio = round(0.1*(i+1),2)
-        miss_list.append(miss_ratio)
+
         miss_path = data_dir+'miss_'+str(miss_ratio)+''.join(['_'+str(ch) for ch in data_size])+'.mat'
-        #if not os.path.exists(miss_path):
-        gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
-        miss_data,miss_pos,tm_ratio = get_sparsedata(miss_path)
-        W = miss_data>0
-        time_s = time.time()
+        if not os.path.exists(miss_path):
+            gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
+        miss_data,W_miss,tm_ratio = get_sparsedata(miss_path)
+        W = (W_miss==False)
+        miss_list.append(int(tm_ratio * 100))
         #预填充
         miss_data = pre_impute(miss_data,W,False)
-        time_e = time.time()
         rW = W|(ori_W==False)
-        '''
-        if 'pre' not in RM_dict:
-            RM_dict['pre'],MP_dict['pre'],RS_dict['pre'],MA_dict['pre'] = [],[],[],[]
-            rt_dict['pre'] = []
-        rm,mp,rs,ma= rmse_mape_rse(miss_data,ori_speeddata,rW)
-        
-        RM_dict['pre'].append(rm)
-        MP_dict['pre'].append(mp)
-        RS_dict['pre'].append(rs)
-        MA_dict['pre'].append(ma)
-        rt_dict['pre'].append(time_e-time_s)
-        
-        
-        #tucker填充
-        time_s = time.time()
-        rank_set = tk_rank(miss_data,0.8)
-        est_tucker = tucker_cpt(miss_data,rank_set,W)
-        time_e = time.time()
-        RMSE_tk,MAPE_tk,RSE_tk,MAE_tk = rmse_mape_rse(est_tucker,ori_speeddata,rW)
-        if 'tk' not in RM_dict:
-            RM_dict['tk'],MP_dict['tk'],RS_dict['tk'],MA_dict['tk'] = [],[],[],[]
-            rt_dict['tk'] = []
-        RM_dict['tk'].append(RMSE_tk)
-        MA_dict['tk'].append(MAE_tk)
-        MP_dict['tk'].append(MAPE_tk)
-        RS_dict['tk'].append(RSE_tk)
-        rt_dict['tk'].append(time_e-time_s)
-        #cp填充
-        time_s = time.time()
-        cp_a = min(ori_speeddata.shape)//2
-        est_cp = cp_cpt(miss_data,cp_a,W)
-        time_e = time.time()
-        RMSE_cp,MAPE_cp,RSE_cp,MAE_cp = rmse_mape_rse(est_cp,ori_speeddata,rW)
-        if 'cp' not in RM_dict:
-            RM_dict['cp'],MP_dict['cp'],RS_dict['cp'],MA_dict['cp'] = [],[],[],[]
-            rt_dict['cp'] = []
-        RM_dict['cp'].append(RMSE_cp)
-        MA_dict['cp'].append(MAE_cp)
-        MP_dict['cp'].append(MAPE_cp)
-        RS_dict['cp'].append(RSE_cp)
-        rt_dict['cp'].append(time_e-time_s)
-        '''
-        #低秩填充部分
-        alpha = [1.0/3,1.0/3,1.0/3]
-        beta = [0.1,0.1,0.1]
-        beta1 = [0.1,0.1,0.1]
-        gama = [2,2,2]
-        lou = 1e-3
-        K = 100
-        fb = 0
-        conv = 1e-5
-        ''' 
-        est_lrtc = lrtc_cpt(miss_data,alpha,beta,gama,conv,K)
-        RMSE_lrtc,MAPE_lrtc,RSE_lrtc,MAE_lrtc = rmse_mape_rse(est_lrtc,ori_speeddata,rW)
-        if 'lrtc' not in RM_dict:
-            RM_dict['lrtc'],MP_dict['lrtc'],RS_dict['lrtc'],MA_dict['lrtc'] = [],[],[],[]
-        RM_dict['lrtc'].append(RMSE_lrtc)
-        MA_dict['lrtc'].append(MAE_lrtc)
-        MP_dict['lrtc'].append(MAPE_lrtc)
-        RS_dcit['lrtc'].append(RSE_lrtc)
-        est_silrtc = silrtc_cpt(miss_data,alpha,beta1,conv,K)
-        RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,rW)
-        if 'silrtc' not in RM_dict:
-            RM_dict['silrtc'],MP_dict['silrtc'],RS_dict['silrtc'],MA_dict['silrtc'] = [],[],[],[]
-        RM_dict['silrtc'].append(RMSE_silrtc)
-        MA_dict['silrtc'].append(MAE_silrtc)
-        MP_dict['silrtc'].append(MAPE_silrtc)
-        RS_dict['silrtc'].append(RSE_silrtc)
-        '''
+
+        #参数
+        p = 0.7
+        K = 100     #iterations
+        F_thre = 1e-5  #F_norm convergence threshold
+
         #halrtc
         time_s = time.time()
-        est_halrtc = halrtc_cpt(miss_data,lou,conv,K,W)
+        lou = 1 / T_SVD(miss_data, p)[0][0]
+        est_halrtc = halrtc_cpt(miss_data,lou,F_thre,K,W,alpha=[1/3,1/3,1/3])
         time_e = time.time()
-        RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,rW)
-        if 'halrtc' not in RM_dict:
-            RM_dict['halrtc'],MP_dict['halrtc'],RS_dict['halrtc'],MA_dict['halrtc'] = [],[],[],[]
-            rt_dict['halrtc'] = []
-        RS_dict['halrtc'].append(RSE_halrtc)
-        RM_dict['halrtc'].append(RMSE_halrtc)
-        MA_dict['halrtc'].append(MAE_halrtc)
-        MP_dict['halrtc'].append(MAPE_halrtc)
-        rt_dict['halrtc'].append(time_e-time_s)
-        #谱聚类+halrtc
-        halrtc_para = [lou,K,conv,fb]
-        Kn = 2
-        time_s = time.time()
-        labels = SC_1(miss_data,6,Kn,axis=0)
-        est_SC = cluster_ha(labels,miss_data,W,Kn,halrtc_para,axis=0)
-        time_e = time.time()
-        rm,mp,rs,ma = rmse_mape_rse(est_SC,ori_speeddata,rW)
-        sc = 'SC-ha'
-        if sc not in RM_dict:
-            RM_dict[sc],MP_dict[sc],RS_dict[sc],MA_dict[sc] = [],[],[],[]
-            rt_dict[sc] = []
-        RM_dict[sc].append(rm)
-        MA_dict[sc].append(ma)
-        MP_dict[sc].append(mp)
-        RS_dict[sc].append(rs)
-        rt_dict[sc].append(time_e-time_s)
+        rm, mp, rs, ma = rmse_mape_rse(est_halrtc,ori_speeddata,rW)
+        km = 'HaLRTC'
+        if km not in RM_dict:
+            RM_dict[km], MP_dict[km], RS_dict[km], MA_dict[km] = [], [], [], []
+            rt_dict[km] = []
+        RM_dict[km].append(rm)
+        MA_dict[km].append(ma)
+        MP_dict[km].append(mp)
+        RS_dict[km].append(rs)
+        rt_dict[km].append(time_e - time_s)
+
         #Kmeans+halrtc
         time_s = time.time()
-        clr_assign,K_n = road_Kmeans(miss_data,ori_W,Kn,W,axis=0,method='cos')
-        est_kmeans = cluster_ha(clr_assign,miss_data,W,K_n,halrtc_para,axis=0)
+        K_n = 4   #cluster_num
+        est_kmeans = Kmeans_ha(miss_data, W, K_n, K, F_thre, p)
         time_e = time.time()
         rm,mp,rs,ma = rmse_mape_rse(est_kmeans,ori_speeddata,rW)
-        km = 'kmeans-ha'
+        km = 'HaLRTC_CSP'
         if km not in RM_dict:
             RM_dict[km],MP_dict[km],RS_dict[km],MA_dict[km] = [],[],[],[]
             rt_dict[km] = []
@@ -393,68 +316,63 @@ def compare_mr(ori_speeddata,ori_W):
         MP_dict[km].append(mp)
         RS_dict[km].append(rs)
         rt_dict[km].append(time_e-time_s)
+
+        #STD
+        time_s = time.time()
+        ap,lm,thre = 2e-10,0.05,0.1
+        est_STD = STD_cpt(miss_data, W, thre, ap, lm, p)
+        time_e = time.time()
+        rm, mp, rs, ma = rmse_mape_rse(est_STD, ori_speeddata, rW)
+        km = 'STD'
+        if km not in RM_dict:
+            RM_dict[km], MP_dict[km], RS_dict[km], MA_dict[km] = [], [], [], []
+            rt_dict[km] = []
+        RM_dict[km].append(rm)
+        MA_dict[km].append(ma)
+        MP_dict[km].append(mp)
+        RS_dict[km].append(rs)
+        rt_dict[km].append(time_e - time_s)
+
+        #BPCA
+        time_s = time.time()
+        est_BPCA = BPCA_cpt(miss_data, p)
+        time_e = time.time()
+        rm, mp, rs, ma = rmse_mape_rse(est_BPCA, ori_speeddata, rW)
+        km = 'BPCA'
+        if km not in RM_dict:
+            RM_dict[km], MP_dict[km], RS_dict[km], MA_dict[km] = [], [], [], []
+            rt_dict[km] = []
+        RM_dict[km].append(rm)
+        MA_dict[km].append(ma)
+        MP_dict[km].append(mp)
+        RS_dict[km].append(rs)
+        rt_dict[km].append(time_e - time_s)
         
-    eva_dict = {'rmse':RM_dict,'mae':MA_dict,'mape':MP_dict,'rt':rt_dict}
+    eva_dict = {'RMSE':RM_dict,'MAE':MA_dict,'MRE':MP_dict,'Run_Time':rt_dict}
+    metric_dict = {'RMSE':'km/h', 'MAE':'km/h', 'MRE':'%', 'Run_Time':'s'}
+    eva_Ylim = {'RMSE':[2,10],'MAE':[0,5],'MRE':[5,20],'Run_Time':[0,5000]}
     shape = ['r--o','r--*','r--x','r--^','r--s','r--D']
+    MK = ['o','o','*','*','x','x']
+    CR = ['r','b','y','r','b','y']
     for eva in eva_dict:
-        fig = plt.figure()
-        ax = fig.add_subplot(1,1,1)
+        #fig = plt.figure()
+        #ax = fig.add_subplot(1,1,1)
+        fw = open('compare_mr_'+'_'+eva+'.txt','w')
+        fw.write('Missing Rate (%):' + ','.join(miss_list) + '\n')
+        plt.xlabel('Missing Rate (%)')
+        plt.ylabel(eva+' ('+metric_dict[eva]+')')
+        # xticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi],
+        #        [r'$-pi$', r'$-pi/2$', r'$0$', r'$+pi/2$', r'$+pi$'])
         nl = 0
         for method in eva_dict[eva]:
-            ax.plot(miss_list,eva_dict[eva][method],shape[nl],label=method)
+            plt.plot(miss_list,eva_dict[eva][method],color=CR[nl],marker=MK[nl],label='$'+method+'$')
+            fw.write('eva:' + ','.join(eva_dict[eva][method])+'\n')
             nl += 1
-        ax.legend(loc='best')
-        plt.savefig(img_dir+'compare_mr_'+str(miss_ratio)+'_'+eva+'_shorten'*shorten+'.png')
+        plt.legend(loc='best')
+        plt.savefig(img_dir+'compare_mr_'+'_'+eva+'.png')
         plt.close()
+        fw.close()
          
-    return 0
-
-def halrtc_cmp(ori_speeddata,ori_W):
-    R_halr_l,MA_halr_l,MP_halr_l = [],[],[]
-    R_halr_fb,MA_halr_fb,MP_halr_fb = [],[],[]
-    miss_list = []
-    for i in range(4):
-        miss_ratio = 0.1*(i+1)
-        miss_list.append(miss_ratio)
-        miss_path = data_dir+'miss_'+'_'.join([str(ch) for ch in data_size])+'_test.mat'
-        #if not os.path.exists(miss_path):
-        gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
-        miss_data,miss_pos,tm_ratio = get_sparsedata(miss_path)
-        W = miss_data>0
-        miss_data = pre_impute(miss_data,W,False)
-        rW = W|ori_W
-        lou = 1e-3
-        K = 100
-        conv = 1e-4
-        fb = 0.85
-        est_halrtc = halrtc_cpt(miss_data,lou,conv,K,W,fb)
-        RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc,ori_speeddata,rW)
-        R_halr_l.append(RMSE_halrtc)
-        MA_halr_l.append(MAE_halrtc)
-        MP_halr_l.append(MAPE_halrtc)
-        print(MA_halr_l)
-        
-        est_halrtc_fb = halrtc_cpt(miss_data,lou,conv,K,W,fb,True)
-        RMSE_halrtc,MAPE_halrtc,RSE_halrtc,MAE_halrtc = rmse_mape_rse(est_halrtc_fb,ori_speeddata,rW)
-        R_halr_fb.append(RMSE_halrtc)
-        MA_halr_fb.append(MAE_halrtc)
-        MP_halr_fb.append(MAPE_halrtc)
-        print(MA_halr_fb)
-        print(np.mean(est_halrtc[rW==False]-est_halrtc_fb[rW==False]))
-        
-    eva_dict = ['rmse','mae','mape']
-    plt.plot(miss_list,R_halr_l,'r--o',label='halrtc')
-    plt.plot(miss_list,R_halr_fb,'r--*',label='halrtc_fb')
-    plt.savefig(img_dir+'compare_mr_rmse_fb_cmp.png')
-    plt.close()
-    plt.plot(miss_list,MA_halr_l,'r--o',label='halrtc')
-    plt.plot(miss_list,MA_halr_fb,'r--*',label='halrtc_fb')
-    plt.savefig(img_dir+'compare_mr_mae_fb_cmp.png')
-    plt.close()
-    plt.plot(miss_list,MP_halr_l,'r--o',label='halrtc')
-    plt.plot(miss_list,MP_halr_fb,'r--*',label='halrtc_fb')
-    plt.savefig(img_dir+'compare_mr_mape_fb_cmp.png')
-    plt.close()
     return 0
 
 def tkcp_res():
@@ -484,73 +402,76 @@ def tkcp_res():
     fw.close()
     return 0
 
-def test_kmeans(sparse_data,K_n,ori_W,W,halrtc_para):
-    clr_assign,K_n = road_Kmeans(sparse_data,ori_W,K_n,W)
-    Clr_mat = {i:[] for i in range(K_n)}
-    for i in range(sparse_data.shape[0]):
-        Clr_mat[clr_assign[i,0]].append(i)
-    [lou,K,conv_thre,fb] = halrtc_para
-    est_data = np.zeros_like(sparse_data)
-    for j in range(K_n):
-        m_data = sparse_data[(clr_assign[:,0]==j)]
-        Wm = W[(clr_assign[:,0]==j)]
-        temp_data = halrtc_cpt(m_data,lou,conv_thre,K,Wm,fb)
-        est_data[Clr_mat[j]] = temp_data
-    return est_data
 
-def cluster_ha(labels,sparse_data,W,cluster_num,halrtc_para,axis=0):
-    sd = sparse_data.copy()
-    Clr_mat = {i:[] for i in range(cluster_num)}
-    for i in range(len(labels)):
-        Clr_mat[labels[i]].append(i)
-    [lou,K,conv_thre,fb] = halrtc_para
-    #sd = sd.swapaxes(0,axis)
-    #WT = W.swapaxes(0,axis)
-    WT = W
-    est_data = np.zeros_like(sd)
-    for j in range(cluster_num):
-        m_data = sd[labels == j]
-        Wm = WT[labels == j]
-        temp_data = halrtc_cpt(m_data,lou,conv_thre,K,Wm,fb)
-        #temp_data = cp_cpt(m_data,len(m_data)//3,Wm)
-        est_data[Clr_mat[j]] = temp_data
-    return est_data.swapaxes(0,axis)
+def svd_vary(sparse_data):
+    ds = sparse_data.shape
+    SG = np.zeros((max(ds),3))
+    for i in range(len(ds)):
+        A = dtensor(sparse_data).unfold(i)
+        # U,sigma,VT = np.linalg.svd(A,0)
+        # SG[:len(sigma),i] = sigma
+        for j in range(ds[i]):
+            SG[j,i] = np.var(A[j])
+        plt.plot(list(range(max(ds))),SG[:,i],'r--o',label='$'+str(i)+'$')
+        break
+    plt.legend(loc=1)
+    plt.savefig(img_dir+'svd_vary.png')
+    plt.close()
+    return
 
-def train_sim(data_):
-    data = data_.copy()
-    data,ori_W1 = deal_orimiss(data)
-    data_size = data.shape
-    print(data_size)
-    miss_ratio = 0.2
-    miss_path1 = data_dir+'miss_'+str(miss_ratio)+'_'+'_'.join([str(ch) for ch in data_size])+'.mat'
-    gene_rand_sparse(data,miss_ratio,miss_path1)
-    miss_data1,W1,tm_ratio = get_sparsedata(miss_path1)
-    miss_data1 = pre_impute(miss_data1,W1)
-    print('W',W1.sum())
-    halrtc_para = [3e-3,100,1e-5,0.85]
-    var_list = np.array(range(100))/100
-    svd_list = np.array(range(100))/1000
-    mean_list = np.array(range(100))/100
-    K_n = 3
-    min_eva = 100000
-    for _ in range(100):
-        vp = var_list[int(random.random()*100)]
-        sp = svd_list[int(random.random()*100)]
-        mp = mean_list[int(random.random()*100)]
-        w_dis = [vp,sp,mp]
-        print(w_dis)
-        labels = SC_1(miss_data1,6,K_n,w_dis,method='multi',axis=0)
-        print(miss_data1.sum())
-        est_SC = cluster_ha(labels,miss_data1,W1,K_n,halrtc_para,axis=0)
-        print(est_SC.sum())
-        rmse,mape,rse,mae = rmse_mape_rse(est_SC,data,W1|(ori_W1==False))
-        cur_eva = rmse+mape*100+mae
-        if cur_eva<min_eva:
-            min_eva = cur_eva
-            opt_labels = labels
-            print(rmse,mape,mae)
-    return opt_labels
+def test_partmiss(ori_data,ori_W,sparse_data,W,new_mr):
+    lou, K, conv_thre, fb = 3e-3, 100, 1e-5, 0.85
+    est1 = halrtc_cpt(sparse_data, lou, conv_thre, K, W, fb)
+    eva1 = rmse_mape_rse(est1, ori_data, (W | (ori_W == False)))
+    print(eva1)
+    ds = sparse_data.shape
+    rand_ts = np.random.rand(ds[0], ds[1], ds[2])
+    new_data = (rand_ts<new_mr)*np.zeros(ds)+sparse_data*(rand_ts>=new_mr)
+    new_data[W] = sparse_data[W]
+    W_new = new_data>0
+    new_data = pre_impute(new_data,W_new)
+    est2 = halrtc_cpt(new_data, lou, conv_thre, K, W_new, fb)
+    eva2 = rmse_mape_rse(est2, ori_data, (W | (ori_W == False)))
+    print(eva2)
+    return
 
+#比较三维张量和四维张量的填充结果
+def compare_3d_4d(ori_speeddata,miss_data):
+    '''
+    weeks = data_size[1] // 7
+    Nori_data = np.zeros((data_size[0], weeks, 7, data_size[2]))
+    Nmiss_data = np.zeros_like(Nori_data)
+    N_W = np.zeros_like(Nmiss_data)
+    Nori_W = np.zeros_like(Nori_data)
+    for i in range(data_size[1]):
+        if i >= weeks * 7:
+            break
+        Nori_data[:, i // 7, i % 7, :] = ori_speeddata[:, i, :]
+        Nori_W[:, i // 7, i % 7, :] = ori_W[:, i, :]
+        Nmiss_data[:, i // 7, i % 7, :] = miss_data[:, i, :]
+        N_W[:, i // 7, i % 7, :] = W[:, i, :]
+    print(Nmiss_data.shape)
+    time0 = time.time()
+    est_halrtc = halrtc_cpt(Nmiss_data, 1e-3, 1e-4, 100, N_W, 0)
+    time1 = time.time()
+    print('4d_halrtc:', rmse_mape_rse(est_halrtc, Nori_data, N_W))
+    print('4d_time', str(time1 - time0) + 's')
+    '''
+    time1 = time.time()
+    lou = 1 / T_SVD(miss_data, 0.7)[0][0]
+    print(lou)
+    est_halrtc = halrtc_cpt(miss_data, lou, 1e-4, 100, W)
+    time2 = time.time()
+    print('3d_halrtc:', rmse_mape_rse(est_halrtc, ori_speeddata, (W | (ori_W == False))))
+    print('3d_time', str(time2 - time1) + 's')
+    return
+
+def test_PPCA(data):
+    ppca = pca.ppca.PPCA()
+    ppca.fit(data)
+    y = ppca.transform_infers()
+    print(y.shape)
+    return y
 
 if __name__ == '__main__':
     data_dir = './data/'
@@ -560,21 +481,16 @@ if __name__ == '__main__':
     #data_size = (60,80,144) 
     #data_size = (15,35,288)
     data_size = (30,20,72)
-    '''
-    ori_path = data_dir+'ori_'+'_'.join([str(ch) for ch in data_size])+'.mat'
-    if not os.path.exists(ori_path):
-        ori_speeddata = get_tensor(mat_path,ori_path,data_size)
-    else:
-        ori_speeddata = scio.loadmat(ori_path)['Speed']
-    '''
-    #ori_path = './Occudata.mat'
-    #ori_speeddata = scio.loadmat(ori_path)['Occu']
     #广州数据
-    ori_speeddata = scio.loadmat('../GZ_data/speed_tensor.mat')['tensor'][:,:30,:]
-    train_sim(ori_speeddata[:,:30,:])
-    sys.exit()
-    print(np.var(ori_speeddata))
-    #ori_speeddata = ori_speeddata.swapaxes(0,2)
+
+    ori_speeddata = scio.loadmat('../GZ_data/speed_tensor.mat')['tensor']
+    #train_sim(ori_speeddata[:,:30,:])
+    #assign_group(ori_speeddata[:,:30,:])
+    #simMat = multi_sim(ori_speeddata[:,:30,:])
+    #scio.savemat('road_sim.mat',{'sim':simMat})
+    #sys.exit()
+    #print(np.var(ori_speeddata))
+    ori_speeddata = ori_speeddata#[:20,:30,:40]#.swapaxes(0,2)
     shorten = False
     ori_speeddata,ori_W = deal_orimiss(ori_speeddata,shorten)
     #ori_speeddata_train = ori_speeddata[:30]
@@ -582,73 +498,104 @@ if __name__ == '__main__':
     data_size = np.shape(ori_speeddata)
     print((ori_W==False).sum())
     print(data_size)
-    #compare_mr(ori_speeddata,ori_W)
-    #sys.exit()
+
+    compare_mr(ori_speeddata,ori_W)
+    sys.exit()
     miss_ratio = 0.2
-    miss_path = data_dir+'miss_'+str(miss_ratio)+'_'+'_'.join([str(ch) for ch in data_size])+'.mat'
+    miss_path = data_dir+'miss_'+str(round(miss_ratio,1))+'_'+'_'.join([str(ch) for ch in data_size])+'.mat'
     #miss_path = data_dir+'cont_miss_'+'_'.join([str(ch) for ch in data_size])+'.mat'
-    gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
+    if not os.path.exists(miss_path):
+        gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
     #gene_cont_sparse(ori_speeddata,miss_ratio,miss_path)
-    miss_data,W,tm_ratio = get_sparsedata(miss_path)
+    miss_data,W_miss,tm_ratio = get_sparsedata(miss_path)
     print('true_miss:',tm_ratio)
     W = miss_data>0
-    W1 = miss_data==0
+    #W1 = miss_data==0
     rank_set = [0,0,0]
     data_shape = np.shape(ori_speeddata)
-    #ori_speeddata = norm_data(ori_speeddata)
-    #miss_data = norm_data(miss_data)
     miss_data = pre_impute(miss_data,W)
-    u,sigma,vt = np.linalg.svd(dtensor(miss_data).unfold(1),0)
-    print(sigma[0],sigma[0]/sum(sigma))
+    print('pre_impute:', rmse_mape_rse(miss_data, ori_speeddata, W | (ori_W == False)))
+    #compare_3d_4d(ori_speeddata,miss_data)
+    #tucker_cpt(miss_data,[50,20,50],W)
+    # est_PPCA = PPCA_cpt(miss_data)
+    est_BPCA = BPCA_cpt(miss_data, 0.7)
+    print(rmse_mape_rse(est_BPCA,ori_speeddata,W))
+    #est_Km = Kmeans_ha(miss_data,W,3,100,1e-4,0.7)
+    #print(rmse_mape_rse(est_Km, ori_speeddata, W))
+    # time0 = time.time()
+    # est_STD = STD_cpt(miss_data, W, alpha=2e-10, lm=0.05, threshold=0.1)
+    # time1 = time.time()
+    # print('ori_STD:', rmse_mape_rse(est_STD, ori_speeddata, (W | (ori_W == False))))
+    # print('ori_time', str(time1 - time0) + 's')
+    #svd_vary(miss_data)
+    '''
+    
+    SD = dtensor(miss_data)
+    SGA = []
+    for i in range(3):
+        U,sigma,VT = np.linalg.svd(SD.unfold(i),0)
+        SGA.append(sum(sigma))
+    for j in range(3):
+        print(SGA[j]/sum(SGA))
+    '''
+
+    sys.exit()
+    #est_partmiss(ori_speeddata, ori_W, miss_data, W, 0.04)
+    #u,sigma,vt = np.linalg.svd(dtensor(miss_data).unfold(1),0)
+    #print(sigma[0],sigma[0]/sum(sigma))
     #sys.exit()
-    alpha = [1/3,1/3,1/3]
-    beta = [0.1,0.1,0.1]
-    beta1 = [0.1,0.1,0.1]
-    gama = [2,2,2]
     lou = 1e-3
     K = 100
     conv = 1e-5
 
-    print('pre_impute:',rmse_mape_rse(miss_data,ori_speeddata,W|(ori_W==False)))
-    #est_silrtc = silrtc_cpt(miss_data,alpha,beta1,conv,K,W)
-    #RMSE_silrtc,MAPE_silrtc,RSE_silrtc,MAE_silrtc = rmse_mape_rse(est_silrtc,ori_speeddata,W|(ori_W==False))
-    #print('RMSE_si,MAE_si',RMSE_silrtc,MAE_silrtc)
-    #Data = SC(miss_data,ori_W,W,4)[1]
-    #km = KernelKMeans(n_clusters=4,max_iter=100,verbose=1)
-    #labels = km.fit_predict(Data)
-    #print(labels)
-    #sys.exit()
-    halrtc_para = [3e-3,100,1e-5,0.85]
-    [lou,K,conv_thre,fb] = halrtc_para    
+
+    halrtc_para = [3e-3,100,1e-5]
+    [lou,K,conv_thre] = halrtc_para
     time0 = time.time()
-    '''
-    U,C = fcm(miss_data,3)
-    est_fcm = np.zeros_like(miss_data)
-    for i in range(U.shape[1]):
-        est_fcm[i] = sum([U[k,i]*C[k] for k in range(3)])
-    rm_fcm,mp_fcm,rs_fcm,ma_fcm = rmse_mape_rse(est_fcm,ori_speeddata,W|(ori_W==False))
-    print('fcm:',rm_fcm,mp_fcm,rs_fcm,ma_fcm)
-    sys.exit()
-    '''
-    
-    #est_cp = cp_cpt(miss_data,15,W)
-    #RMSE_cp,MAPE_cp,RSE_cp,MAE_cp = rmse_mape_rse(est_cp,ori_speeddata,W)
-    #print('RMSE_cp,MAE_cp,MAPE_cp',RMSE_cp,MAE_cp,MAPE_cp)
+    #est_halrtc = halrtc_cpt(miss_data, 1.3e-3, 1e-4, 100, W, 0)
     time1 = time.time()
-    #print('sc_est:',time1-time0,'s')
-    time1 =time.time()
-    clr_assign,K_n = road_Kmeans(miss_data,ori_W,2,W,axis=0)
+    #print('ori_halrtc:', rmse_mape_rse(est_halrtc, ori_speeddata, (W | (ori_W == False))))
+    print('ori_time', str(time1- time0) + 's')
+    K_n = 2
+    labels = SC_1(miss_data, 6, K_n, axis=0)
+    est_SC = cluster_ha(labels, miss_data, W, K_n, halrtc_para, axis=0)
+    time_e = time.time()
+    print('sc_est:',rmse_mape_rse(est_SC, ori_speeddata, W|(ori_W==False)))
+    clr_assign,K_n = road_Kmeans(miss_data,ori_W,K_n,W,axis=0,method='cos')
     est_kmeans = cluster_ha(clr_assign,miss_data,W,K_n,halrtc_para,axis=0)
     print('kmeans_est:',rmse_mape_rse(est_kmeans,ori_speeddata,W|(ori_W==False)))
     time2 = time.time()
     print('kmeans_time:',time2-time1,'s')
-    #sys.exit()
-    
-    est_halrtc = halrtc_cpt(miss_data,lou,conv_thre,K,W,fb)
-    print('halrtc:',rmse_mape_rse(est_halrtc,ori_speeddata,W|(ori_W==False)))
+    sys.exit()
+    cr = range(30)
+    weekday,weekend = [],[]
+    week_dict = {}
+    for i in range(61):
+        if i%7 not in week_dict:
+            week_dict[i%7] = []
+        week_dict[i%7].append(i)
+        if i%7 < 5:
+            weekday.append(i)
+        else:
+            weekend.append(i)
+
+    est_week = np.zeros_like(miss_data)
+    '''
+    for wd in sorted(week_dict.keys()):
+        est_halrtc = halrtc_cpt(miss_data[:,week_dict[wd],:],lou,conv_thre,K,W[:,week_dict[wd],:],fb)
+        est_week[:,week_dict[wd],:] = est_halrtc
+        print('halrtc:',rmse_mape_rse(est_halrtc,ori_speeddata[:,week_dict[wd],:],(W|(ori_W==False))[:,week_dict[wd],:]))
+    '''
+
+    est_halrtc = halrtc_cpt(miss_data[:, weekday, :], lou, conv_thre, K, W[:, weekday, :], fb)
+    est_week[:, weekday, :] = est_halrtc
+    est_halrtc = halrtc_cpt(miss_data[:, weekend, :], lou, conv_thre, K, W[:, weekend, :], fb)
+    est_week[:, weekend, :] = est_halrtc
+    print(rmse_mape_rse(est_week,ori_speeddata,W|(ori_W==False)))
+
     time3 = time.time()
     print('ha_time:',time3-time2,'s')
-    #sys.exit()
+    sys.exit()
     w_dis = [0.1,0.8,0.7]
     K_n = 3
     svd_list = [0.01,0.1,1]
@@ -678,7 +625,7 @@ if __name__ == '__main__':
     plt.plot(var_list,mae_list)
     plt.savefig(img_dir+"SC_para.png")
     plt.close()
-    print('SC_est:',rmse_mape_rse(est_SC,ori_speeddata,W|(ori_W==False)))#compare_iter(ori_speeddata,miss_data,miss_pos,W)
+    print('SC_est:',rmse_mape_rse(est_SC,ori_speeddata,W|(ori_W==False)))
     #halrtc_cmp(ori_speeddata,ori_W)
     #sys.exit()
     '''
