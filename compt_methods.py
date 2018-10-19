@@ -114,7 +114,8 @@ def STD_cpt(sparse_data,W,threshold=1e-4, alpha=2e-10, lm=0.01, p=0.7):
     #return
     Upre_list = U_list
     F_diff = sys.maxsize
-    while F_diff > threshold:
+    iter = 0
+    while F_diff > threshold and iter < 500:
         X_pre = X.copy()
         #print('Xpre_norm',np.linalg.norm(X_pre))
         # Upre_list = []
@@ -138,6 +139,7 @@ def STD_cpt(sparse_data,W,threshold=1e-4, alpha=2e-10, lm=0.01, p=0.7):
         X = core.ttm(Upre_list[0],0).ttm(Upre_list[1],1).ttm(Upre_list[2],2)
         F_diff = np.linalg.norm(X-X_pre)
        #break
+        iter += 1
     return X
 
 #CP�ֽ����䷽��
@@ -252,8 +254,9 @@ def halrtc_cpt(sparse_data,lou,conv_thre,K,W,alpha=[0,0,1]):
         for i in range(N):
             Y[i] -= lou*(M[i]-X)
     time_e = time.time()
-    print('-'*8+'halrtc'+'-'*8)
-    print('exec_time:'+str(time_e-time_s)+'s')
+    #print('-'*8+'halrtc'+'-'*8)
+    #print('exec_time:'+str(time_e-time_s)+'s')
+    print('iter:',iter)
     return X
 
 def PPCA_cpt(sparse_data,p=0.7):
@@ -284,7 +287,7 @@ def BPCA_cpt(sparse_data,p=0.7):
         bppca.fit()
         est_BPCA[i] = bppca.transform_infers()
     time_e = time.time()
-    print('-' * 8 + 'PPCA' + '-' * 8)
+    print('-' * 8 + 'BPCA' + '-' * 8)
     print('exec_time:' + str(time_e - time_s) + 's')
     return est_BPCA
 
@@ -303,11 +306,11 @@ def cluster_ha(labels,sparse_data,W,cluster_num,halrtc_para, alpha):
         est_data[Clr_mat[j]] = temp_data
     return est_data
 
-def Kmeans_ha(sparse_data,W, K_n, K, conv_thre, p):
+def Kmeans_ha(sparse_data,W, K_n, K, conv_thre, p, alpha=[0,0,1]):
     SD = sparse_data.copy()
     time0 = time.time()
     lou = 1/T_SVD(SD,p)[0][0]
-    alpha = [0,0,1]
+    #alpha = [0,0,1]
     halrtc_para = [lou,K,conv_thre]
     var_mat, mean_mat = traffic_info(SD)
     clf = KMeans(n_clusters=K_n)

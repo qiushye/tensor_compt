@@ -12,7 +12,10 @@ import os
 import scipy.io as scio
 import sys
 import time
+import matplotlib
+plt.use('Agg')
 import matplotlib.pyplot as plt
+
 import random
 
 def handle_data(data_,mr=0.2,miss_type = 'rand'):
@@ -184,7 +187,6 @@ def AHC(handle_info,choise,var_mat,mean_mat,k=2,max_d=100):
     #clusters = fcluster(Z, max_d, criterion='distance')
     clusters = fcluster(Z, k, criterion='maxclust')
     print(clusters)
-    plt.show()
     plt.savefig('ahc_tree.png')
     plt.close()
     return clusters-1,c
