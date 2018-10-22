@@ -3,6 +3,7 @@ import sktensor
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import sys
 import os
 import scipy.io as scio
@@ -232,7 +233,7 @@ def compare_iter(ori_speeddata,miss_data,miss_pos,W):
     #show_img(K_list,RMSE_tc,MAE_tc,['lrtc','silrtc','halrtc'])
     return 0
 
-def compare_methods(ori_speeddata,ori_W):
+def compare_methods(ori_speeddata,ori_W,miss_type="rand"):
     RM_dict,MA_dict,RS_dict,MP_dict = {},{},{},{}
     rt_dict = {}
     miss_list = []
@@ -241,9 +242,12 @@ def compare_methods(ori_speeddata,ori_W):
         print('----'+str(i)+'----')
         miss_ratio = round(0.1*(i+1),2)
 
-        miss_path = data_dir+'miss_'+str(miss_ratio)+''.join(['_'+str(ch) for ch in data_size])+'.mat'
+        miss_path = data_dir+'miss_'+miss_type+str(miss_ratio)+''.join(['_'+str(ch) for ch in data_size])+'.mat'
         if not os.path.exists(miss_path):
-            gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
+            if miss_type == "rand":
+                gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
+            else:
+                gene_cont_sparse(ori_speeddata, miss_ratio, miss_path)
         miss_data,W_miss,tm_ratio = get_sparsedata(miss_path)
         W = (W_miss==False)
         rW = W | (ori_W == False)
@@ -254,7 +258,7 @@ def compare_methods(ori_speeddata,ori_W):
         miss_data = pre_impute(miss_data, W)
         time_e = time.time()
         rm, mp, rs, ma = rmse_mape_rse(miss_data, ori_speeddata, rW)
-        km = 'pre-impute'
+        km = 'HAI'
         if km not in RM_dict:
             RM_dict[km], MP_dict[km], RS_dict[km], MA_dict[km] = [], [], [], []
             rt_dict[km] = []
@@ -263,7 +267,7 @@ def compare_methods(ori_speeddata,ori_W):
         MP_dict[km].append(mp)
         RS_dict[km].append(rs)
         rt_dict[km].append(round(time_e - time_s, 1))
-        """
+        
         #参数
         p = 0.7
         K = 100     #iterations
@@ -288,7 +292,7 @@ def compare_methods(ori_speeddata,ori_W):
         #Kmeans+halrtc
         time_s = time.time()
         K_n = 4   #cluster_num
-        est_kmeans = Kmeans_ha(miss_data, W, K_n, K, F_thre, p)
+        est_kmeans = Kmeans_ha(miss_data, W, K_n, K, F_thre, p, [1/3,1/3,1/3])
         time_e = time.time()
         rm,mp,rs,ma = rmse_mape_rse(est_kmeans,ori_speeddata,rW)
         km = 'HaLRTC-CSP'
@@ -300,10 +304,10 @@ def compare_methods(ori_speeddata,ori_W):
         MP_dict[km].append(mp)
         RS_dict[km].append(rs)
         rt_dict[km].append(round(time_e - time_s,1))
-        '''
+        
         #STD
         time_s = time.time()
-        ap,lm,thre = 2e-10,0.05,0.1
+        ap,lm,thre = 2e-10,0.01,1e-4
         est_STD = STD_cpt(miss_data, W, thre, ap, lm, p)
         time_e = time.time()
         rm, mp, rs, ma = rmse_mape_rse(est_STD, ori_speeddata, rW)
@@ -316,7 +320,7 @@ def compare_methods(ori_speeddata,ori_W):
         MP_dict[km].append(mp)
         RS_dict[km].append(rs)
         rt_dict[km].append(round(time_e - time_s,1))
-        '''
+        
         #BPCA
         time_s = time.time()
         est_BPCA = BPCA_cpt(miss_data, p)
@@ -331,7 +335,7 @@ def compare_methods(ori_speeddata,ori_W):
         MP_dict[km].append(mp)
         RS_dict[km].append(rs)
         rt_dict[km].append(round(time_e - time_s,1))
-        """
+        
         
     eva_dict = {'RMSE':RM_dict,'MAE':MA_dict,'MRE':MP_dict,'Run_Time':rt_dict}
     metric_dict = {'RMSE':'km/h', 'MAE':'km/h', 'MRE':'%', 'Run_Time':'s'}
@@ -343,11 +347,25 @@ def compare_methods(ori_speeddata,ori_W):
     fw = open('compare_methods' + '.txt', 'w')
     fw.write('methods:'+','.join(list(eva_dict['RMSE'].keys()))+'\n')
     fw.write('Missing Rate (%):' + ','.join(list(map(str, miss_list))) + '\n')
+    Xmajor = 10
+    Xminor = 2
+    Yminor = {'RMSE':0.2, 'MAE':0.2, 'MRE':0.5, 'Run_Time':2}
     for eva in eva_dict:
-        #fig = plt.figure()
-        #ax = fig.add_subplot(1,1,1)
-        plt.xlabel('Missing Rate (%)')
-        plt.ylabel(eva+' ('+metric_dict[eva]+')')
+        ax = plt.subplot()
+        nl = 0
+
+        ax.set_xlabel('Missing Rate (%)')
+        ax.set_ylabel(eva+ ' ('+ metric_dict[eva] + ')')
+        
+        xmajorLocator = MultipleLocator(Xmajor)
+        ax.xaxis.set_major_locator(xmajorLocator)
+        xminorLocator = MultipleLocator(Xminor)
+        ax.xaxis.set_minor_locator(xminorLocator)
+        yminorLocator = MultipleLocator(Yminor[eva])
+        ax.yaxis.set_minor_locator(yminorLocator)
+        
+        ax.xaxis.grid(True, which='major')
+        ax.yaxis.grid(True, which='minor')
         # xticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi],
         #        [r'$-pi$', r'$-pi/2$', r'$0$', r'$+pi/2$', r'$+pi$'])
         nl = 0
@@ -357,7 +375,7 @@ def compare_methods(ori_speeddata,ori_W):
             fw.write(','.join(list(map(str, eva_dict[eva][method]))) + '\n')
             nl += 1
         plt.legend(loc='best')
-        plt.savefig(img_dir+'compare_mr_'+'_'+eva+'.png')
+        plt.savefig(img_dir+'compare_mr_'+eva+'.png')
         plt.close()
     fw.close()
          
@@ -393,7 +411,7 @@ def compare_3d_4d(ori_speeddata,miss_data):
     print('3d_time', str(time2 - time1) + 's')
     return
 
-def compare_PI(ori_speeddata,ori_W):
+def compare_PI(ori_speeddata,ori_W,miss_type="rand"):
     RM_dict, MA_dict, RS_dict, MP_dict = {}, {}, {}, {}
     rt_dict = {}
     miss_list = []
@@ -404,10 +422,14 @@ def compare_PI(ori_speeddata,ori_W):
     for i in range(8):
         print('----'+str(i)+'----')
         miss_ratio = round(0.1*(i+1),2)
-        miss_path = data_dir+'miss_'+str(miss_ratio)+''.join(['_'+str(ch) for ch in data_size])+'.mat'
+        miss_path = data_dir+'miss_'+miss_type+str(miss_ratio)+''.join(['_'+str(ch) for ch in data_size])+'.mat'
         if not os.path.exists(miss_path):
-            gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
+            if miss_type=="rand":
+                gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
+            else:
+                gene_cont_sparse(ori_speeddata,miss_ratio,miss_path)
         miss_data,W_miss,tm_ratio = get_sparsedata(miss_path)
+        print('true_miss_ratio:',tm_ratio)
         W = (W_miss==False)
         miss_list.append(round(tm_ratio * 100,1))
         #预填充
@@ -453,25 +475,38 @@ def compare_PI(ori_speeddata,ori_W):
     shape = ['r--o', 'r--*', 'r--x', 'r--^', 'r--s', 'r--D']
     MK = ['o', 'o', '*', '*', 'x', 'x']
     CR = ['r', 'b', 'y', 'r', 'b', 'y']
-    fw = open('compare_PI_' + '.txt', 'w')
-    fw.write('Missing Rate (%):' + ','.join(list(map(str, miss_list))) + '\n')
+    fw = open('compare_PI_'+'.txt','w')
+    fw.write('Missing Rate (%):' + ','.join(list(map(str,miss_list)))+'\n')
+    Xmajor = 10
+    Xminor = 2
+    Yminor = {'RMSE':0.2, 'MAE':0.2, 'MRE':0.5, 'Run_Time':2}
     for eva in eva_dict:
-        # fig = plt.figure()
-        # ax = fig.add_subplot(1,1,1)
+        
+        ax = plt.subplot()
+        nl = 0
 
-        plt.xlabel('Missing Rate (%)')
-        plt.ylabel(eva + ' (' + metric_dict[eva] + ')')
+        ax.set_xlabel('Missing Rate (%)')
+        ax.set_ylabel(eva+ ' ('+ metric_dict[eva] + ')')
+        
+        xmajorLocator = MultipleLocator(Xmajor)
+        ax.xaxis.set_major_locator(xmajorLocator)
+        xminorLocator = MultipleLocator(Xminor)
+        ax.xaxis.set_minor_locator(xminorLocator)
+        yminorLocator = MultipleLocator(Yminor[eva])
+        ax.yaxis.set_minor_locator(yminorLocator)
+        
+        ax.xaxis.grid(True, which='major')
+        ax.yaxis.grid(True, which='minor')
         # xticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi],
         #        [r'$-pi$', r'$-pi/2$', r'$0$', r'$+pi/2$', r'$+pi$'])
-        nl = 0
         fw.write(eva + ':' + '\n')
         for method in eva_dict[eva]:
-            plt.plot(miss_list, eva_dict[eva][method], color=CR[nl], marker=MK[nl], label='$' + method + '$')
+            ax.plot(miss_list, eva_dict[eva][method], color=CR[nl], marker=MK[nl], label='$' + method + '$')
             fw.write(','.join(list(map(str, eva_dict[eva][method]))) + '\n')
             nl += 1
 
-        plt.legend(loc='best')
-        plt.savefig(img_dir + 'compare_PI_' + '_' + eva + '.png')
+        ax.legend(loc='best')
+        plt.savefig(img_dir + 'compare_PI_' +eva+ '.png')
         plt.close()
     fw.close()
     return 0
@@ -516,14 +551,13 @@ if __name__ == '__main__':
     data_size = np.shape(ori_speeddata)
     print(data_size)
 
-    # compare_methods(ori_speeddata,ori_W)
-    # compare_PI(ori_speeddata,ori_W)
-    #sys.exit()
-    miss_ratio = 0.2
-    miss_path = data_dir+'miss_'+str(round(miss_ratio,1))+'_'+'_'.join([str(ch) for ch in data_size])+'.mat'
-    #miss_path = data_dir+'cont_miss_'+'_'.join([str(ch) for ch in data_size])+'.mat'
-    if not os.path.exists(miss_path):
-        gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
+    compare_methods(ori_speeddata,ori_W,"cont")
+    #compare_PI(ori_speeddata,ori_W,"cont")
+    sys.exit() 
+    miss_ratio = 0.2 
+    miss_path = data_dir+'miss_cont'+str(round(miss_ratio,1))+'_'+'_'.join([str(ch) for ch in data_size])+'.mat'
+    #miss_path = data_dir+'cont_miss_'+'_'.join([str(ch) for ch in data_size])+'.mat' if not os.path.exists(miss_path):
+    #gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
     miss_data,W_miss,tm_ratio = get_sparsedata(miss_path)
     # f, ax = plt.subplots()
     # sns.heatmap(miss_data[0], cmap='RdBu', linewidths=0.05, ax=ax)
@@ -534,23 +568,24 @@ if __name__ == '__main__':
     # plt.close()
     # sys.exit()
     W = miss_data>0
+    lou = 1e-3
+    K = 100
+    conv = 1e-4
     #W1 = miss_data==0
     data_shape = np.shape(ori_speeddata)
     miss_data = pre_impute(miss_data,W)
     print('pre_impute:', rmse_mape_rse(miss_data, ori_speeddata, W | (ori_W == False)))
     #compare_3d_4d(ori_speeddata,miss_data)
-    ori_imputation(miss_data, W, ori_speeddata, ori_W)
+    #ori_imputation(miss_data, W, ori_speeddata, ori_W)
     #svd_vary(miss_data)
-
+    est_STD = STD_cpt(miss_data,W,p=0.75)
+    print(rmse_mape_rse(est_STD, ori_speeddata, (W|ori_W==False)))
     sys.exit()
     #est_partmiss(ori_speeddata, ori_W, miss_data, W, 0.04)
     #u,sigma,vt = np.linalg.svd(dtensor(miss_data).unfold(1),0)
     #print(sigma[0],sigma[0]/sum(sigma))
     #sys.exit()
-    lou = 1e-3
-    K = 100
-    conv = 1e-4
-
+    
 
     halrtc_para = [3e-3,100,1e-4]
     [lou,K,conv_thre] = halrtc_para
