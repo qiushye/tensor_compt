@@ -292,7 +292,7 @@ def compare_methods(ori_speeddata,ori_W,miss_type="rand"):
         #Kmeans+halrtc
         time_s = time.time()
         K_n = 4   #cluster_num
-        est_kmeans = Kmeans_ha(miss_data, W, K_n, K, F_thre, p, [1/3,1/3,1/3])
+        est_kmeans = Kmeans_ha(miss_data, W, K_n, K, F_thre, p)
         time_e = time.time()
         rm,mp,rs,ma = rmse_mape_rse(est_kmeans,ori_speeddata,rW)
         km = 'HaLRTC-CSP'
@@ -344,12 +344,12 @@ def compare_methods(ori_speeddata,ori_W,miss_type="rand"):
     MK = ['o','o','*','*','x','x']
     CR = ['r','b','y','r','b','y']
 
-    fw = open('compare_methods' + '.txt', 'w')
+    fw = open('compare_methods_' +miss_type+ '.txt', 'w')
     fw.write('methods:'+','.join(list(eva_dict['RMSE'].keys()))+'\n')
     fw.write('Missing Rate (%):' + ','.join(list(map(str, miss_list))) + '\n')
     Xmajor = 10
     Xminor = 2
-    Yminor = {'RMSE':0.2, 'MAE':0.2, 'MRE':0.5, 'Run_Time':2}
+    Yminor = {'RMSE':0.1, 'MAE':0.05, 'MRE':0.2, 'Run_Time':10}
     for eva in eva_dict:
         ax = plt.subplot()
         nl = 0
@@ -375,7 +375,7 @@ def compare_methods(ori_speeddata,ori_W,miss_type="rand"):
             fw.write(','.join(list(map(str, eva_dict[eva][method]))) + '\n')
             nl += 1
         plt.legend(loc='best')
-        plt.savefig(img_dir+'compare_mr_'+eva+'.png')
+        plt.savefig(img_dir+'compare_mr_'+miss_type+'_'+eva+'.png')
         plt.close()
     fw.close()
          
@@ -422,16 +422,17 @@ def compare_PI(ori_speeddata,ori_W,miss_type="rand"):
     for i in range(8):
         print('----'+str(i)+'----')
         miss_ratio = round(0.1*(i+1),2)
-        miss_path = data_dir+'miss_'+miss_type+str(miss_ratio)+''.join(['_'+str(ch) for ch in data_size])+'.mat'
+
+        miss_path = data_dir+'miss_rand'+str(miss_ratio)+''.join(['_'+str(ch) for ch in data_size])+'.mat'
         if not os.path.exists(miss_path):
             if miss_type=="rand":
                 gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
             else:
                 gene_cont_sparse(ori_speeddata,miss_ratio,miss_path)
         miss_data,W_miss,tm_ratio = get_sparsedata(miss_path)
+        miss_list.append(round(tm_ratio*100,1))
         print('true_miss_ratio:',tm_ratio)
         W = (W_miss==False)
-        miss_list.append(round(tm_ratio * 100,1))
         #预填充
         #miss_data = pre_impute(miss_data,W,False)
         rW = W|(ori_W==False)
@@ -441,7 +442,7 @@ def compare_PI(ori_speeddata,ori_W,miss_type="rand"):
         est_halrtc = halrtc_cpt(miss_data, 1e-3, 1e-4, 100, W,[1/3,1/3,1/3])
         time_e = time.time()
         rm, mp, rs, ma = rmse_mape_rse(est_halrtc, ori_speeddata, rW)
-        km = 'Without-PI'
+        km = 'MCAR-Without-PI'
         if km not in RM_dict:
             RM_dict[km], MP_dict[km], RS_dict[km], MA_dict[km] = [], [], [], []
             rt_dict[km] = []
@@ -459,7 +460,7 @@ def compare_PI(ori_speeddata,ori_W,miss_type="rand"):
         est_halrtc = halrtc_cpt(miss_data, 1e-3, 1e-4, 100, W,[1/3,1/3,1/3])
         time_e = time.time()
         rm, mp, rs, ma = rmse_mape_rse(est_halrtc, ori_speeddata, rW)
-        km = 'With-PI'
+        km = 'MCAR-With-PI'
         if km not in RM_dict:
             RM_dict[km], MP_dict[km], RS_dict[km], MA_dict[km] = [], [], [], []
             rt_dict[km] = []
@@ -469,13 +470,61 @@ def compare_PI(ori_speeddata,ori_W,miss_type="rand"):
         RS_dict[km].append(rs)
         rt_dict[km].append(round(time_e - time_s,1))
 
+        miss_path = data_dir+'miss_cont'+str(miss_ratio)+''.join(['_'+str(ch) for ch in data_size])+'.mat'
+        if not os.path.exists(miss_path):
+            if miss_type=="rand":
+                gene_rand_sparse(ori_speeddata,miss_ratio,miss_path)
+            else:
+                gene_cont_sparse(ori_speeddata,miss_ratio,miss_path)
+        miss_data,W_miss,tm_ratio = get_sparsedata(miss_path)
+        print('true_miss_ratio:',tm_ratio)
+        W = (W_miss==False)
+
+        #预填充
+        #miss_data = pre_impute(miss_data,W,False)
+        rW = W|(ori_W==False)
+        time_s = time.time()
+        K_n = 4  # cluster_num
+        #est_kmeans = Kmeans_ha(miss_data, W, K_n, K, F_thre, p)
+        est_halrtc = halrtc_cpt(miss_data, 1e-3, 1e-4, 100, W,[1/3,1/3,1/3])
+        time_e = time.time()
+        rm, mp, rs, ma = rmse_mape_rse(est_halrtc, ori_speeddata, rW)
+        km = 'MNAR-Without-PI'
+        if km not in RM_dict:
+            RM_dict[km], MP_dict[km], RS_dict[km], MA_dict[km] = [], [], [], []
+            rt_dict[km] = []
+        RM_dict[km].append(rm)
+        MA_dict[km].append(ma)
+        MP_dict[km].append(mp)
+        RS_dict[km].append(rs)
+        rt_dict[km].append(round(time_e - time_s,1))
+
+        miss_data = pre_impute(miss_data, W, False)
+        rW = W | (ori_W == False)
+        time_s = time.time()
+        K_n = 4  # cluster_num
+        #est_kmeans = Kmeans_ha(miss_data, W, K_n, K, F_thre, p)
+        est_halrtc = halrtc_cpt(miss_data, 1e-3, 1e-4, 100, W,[1/3,1/3,1/3])
+        time_e = time.time()
+        rm, mp, rs, ma = rmse_mape_rse(est_halrtc, ori_speeddata, rW)
+        km = 'MNAR-With-PI'
+        if km not in RM_dict:
+            RM_dict[km], MP_dict[km], RS_dict[km], MA_dict[km] = [], [], [], []
+            rt_dict[km] = []
+        RM_dict[km].append(rm)
+        MA_dict[km].append(ma)
+        MP_dict[km].append(mp)
+        RS_dict[km].append(rs)
+        rt_dict[km].append(round(time_e - time_s,1))
+
+
     eva_dict = {'RMSE': RM_dict, 'MAE': MA_dict, 'MRE': MP_dict, 'Run_Time': rt_dict}
     metric_dict = {'RMSE': 'km/h', 'MAE': 'km/h', 'MRE': '%', 'Run_Time': 's'}
     eva_Ylim = {'RMSE': [2, 10], 'MAE': [0, 5], 'MRE': [5, 20], 'Run_Time': [0, 5000]}
     shape = ['r--o', 'r--*', 'r--x', 'r--^', 'r--s', 'r--D']
     MK = ['o', 'o', '*', '*', 'x', 'x']
     CR = ['r', 'b', 'y', 'r', 'b', 'y']
-    fw = open('compare_PI_'+'.txt','w')
+    fw = open('compare_PI'+'.txt','w')
     fw.write('Missing Rate (%):' + ','.join(list(map(str,miss_list)))+'\n')
     Xmajor = 10
     Xminor = 2
@@ -552,7 +601,7 @@ if __name__ == '__main__':
     print(data_size)
 
     compare_methods(ori_speeddata,ori_W,"cont")
-    #compare_PI(ori_speeddata,ori_W,"cont")
+    #compare_PI(ori_speeddata,ori_W,"rand")
     sys.exit() 
     miss_ratio = 0.2 
     miss_path = data_dir+'miss_cont'+str(round(miss_ratio,1))+'_'+'_'.join([str(ch) for ch in data_size])+'.mat'
@@ -575,17 +624,9 @@ if __name__ == '__main__':
     data_shape = np.shape(ori_speeddata)
     miss_data = pre_impute(miss_data,W)
     print('pre_impute:', rmse_mape_rse(miss_data, ori_speeddata, W | (ori_W == False)))
-    #compare_3d_4d(ori_speeddata,miss_data)
-    #ori_imputation(miss_data, W, ori_speeddata, ori_W)
-    #svd_vary(miss_data)
     est_STD = STD_cpt(miss_data,W,p=0.75)
     print(rmse_mape_rse(est_STD, ori_speeddata, (W|ori_W==False)))
     sys.exit()
-    #est_partmiss(ori_speeddata, ori_W, miss_data, W, 0.04)
-    #u,sigma,vt = np.linalg.svd(dtensor(miss_data).unfold(1),0)
-    #print(sigma[0],sigma[0]/sum(sigma))
-    #sys.exit()
-    
 
     halrtc_para = [3e-3,100,1e-4]
     [lou,K,conv_thre] = halrtc_para
