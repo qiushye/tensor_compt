@@ -42,16 +42,27 @@ def compare_C(ori_speeddata,ori_W):
     fw.write('Clustering Number:' + ','.join(list(map(str, C_list))) + '\n')
     Xmajor = 2
     Xminor = 2
-    Yminor = {'RMSE':0.005, 'MAE':0.005, 'MRE':0.01, 'Run_Time':1}
+    Yminor = {'RMSE':0.05, 'MAE':0.05, 'MRE':0.1, 'Run_Time':10}
+    Xlim = [0,32]
+    Ylims = {'RMSE':[2.6,3.0],'MAE':[1.8,2.1],'MRE':[6.0,6.6],'Run_Time':[30,100]}
+    Yticks = {'RMSE':[2.60, 2.65, 2.70, 2.75, 2,80,2.85, 2.90, 2.95, 3.00],
+            'MAE': [1.80, 1.85, 1.90, 1.95, 2.00, 2.05, 2.10],
+            'MRE': [6.0, 6.1, 6.2 6.3 6.4, 6.5, 6.6, 6.7], 
+            'Run_Time': list(range(30,101,10))}
     for eva in eva_dict:
         ax = plt.subplot()
         ax.set_xlabel('Clustering Number')
         ax.set_ylabel(eva+ ' ('+ metric_dict[eva] + ')')
+
+        ax.set_xlim(Xlim)
+        ax.set_ylim(Ylims[eva])
+
+        #ax.set_yticks(Yticks[eva])
         
-        xmajorLocator = MultipleLocator(Xmajor)
-        ax.xaxis.set_major_locator(xmajorLocator)
-        xminorLocator = MultipleLocator(Xminor)
-        ax.xaxis.set_minor_locator(xminorLocator)
+        #xmajorLocator = MultipleLocator(Xmajor)
+        #ax.xaxis.set_major_locator(xmajorLocator)
+        #xminorLocator = MultipleLocator(Xminor)
+        #ax.xaxis.set_minor_locator(xminorLocator)
         yminorLocator = MultipleLocator(Yminor[eva])
         ax.yaxis.set_minor_locator(yminorLocator)
         
@@ -169,6 +180,8 @@ def compare_p(ori_speeddata, ori_W):
         MP_dict[km].append(mp)
         RS_dict[km].append(rs)
         rt_dict[km].append(round(time_e - time_s, 1))
+        if i == 1:
+            break
         
 
     eva_dict = {'RMSE': RM_dict, 'MAE': MA_dict, 'MRE': MP_dict, 'Run_Time': rt_dict}
@@ -182,7 +195,11 @@ def compare_p(ori_speeddata, ori_W):
     fw.write('methods:' + ','.join(list(eva_dict['RMSE'].keys())) + '\n')
     fw.write('Truncated rate:' + ','.join(list(map(str, p_list))) + '\n')
     Xmajor = 0.1
-    Yminor = {'RMSE':0.2, 'MAE':0.2, 'MRE':0.5, 'Run_Time':10}
+    Yminor = {'RMSE':0.5, 'MAE':0.2, 'MRE':1, 'Run_Time':50}
+    Xlim = [0,90]
+    Ylims = {'RMSE':[2,6],'MAE':[1.6, 3.6],'MRE':[5,13],'Run_Time':[0,500]}
+    Yticks = {'RMSE':list(range(2,9)), 'MAE': list(range(1,8)),
+            'MRE': list(range(5,14,2)), 'Run_Time': list(range(0,501,50))}
     for eva in eva_dict:
         ax = plt.subplot()
         nl = 0
@@ -190,8 +207,13 @@ def compare_p(ori_speeddata, ori_W):
         ax.set_xlabel('Truncated Singular Value Rate')
         ax.set_ylabel(eva+ ' ('+ metric_dict[eva] + ')')
         
-        xmajorLocator = MultipleLocator(Xmajor)
-        ax.xaxis.set_major_locator(xmajorLocator)
+        ax.set_xlim(Xlim)
+        ax.set_ylim(Ylims[eva])
+
+        #ax.set_yticks(Yticks[eva])
+
+        #xmajorLocator = MultipleLocator(Xmajor)
+        #ax.xaxis.set_major_locator(xmajorLocator)
         #xminorLocator = MultipleLocator(Xminor)
         #ax.xaxis.set_minor_locator(xminorLocator)
         yminorLocator = MultipleLocator(Yminor[eva])
@@ -278,6 +300,6 @@ if __name__ == '__main__':
     #compare_PI(ori_speeddata,ori_W)
     compare_C(ori_speeddata, ori_W)
     #compare_alpha(ori_speeddata,ori_W)
-    #compare_p(ori_speeddata,ori_W)
+    compare_p(ori_speeddata,ori_W)
     #result_plot('compare_methods_p_1.txt')
     sys.exit()

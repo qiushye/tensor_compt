@@ -336,7 +336,6 @@ def compare_methods(ori_speeddata,ori_W,miss_type="rand"):
         RS_dict[km].append(rs)
         rt_dict[km].append(round(time_e - time_s,1))
         
-        
     eva_dict = {'RMSE':RM_dict,'MAE':MA_dict,'MRE':MP_dict,'Run_Time':rt_dict}
     metric_dict = {'RMSE':'km/h', 'MAE':'km/h', 'MRE':'%', 'Run_Time':'s'}
     eva_Ylim = {'RMSE':[2,10],'MAE':[0,5],'MRE':[5,20],'Run_Time':[0,5000]}
@@ -349,20 +348,29 @@ def compare_methods(ori_speeddata,ori_W,miss_type="rand"):
     fw.write('Missing Rate (%):' + ','.join(list(map(str, miss_list))) + '\n')
     Xmajor = 10
     Xminor = 2
-    Yminor = {'RMSE':0.1, 'MAE':0.05, 'MRE':0.2, 'Run_Time':10}
+    Yminor = {'RMSE':0.5, 'MAE':0.2, 'MRE':1, 'Run_Time':50}
+    Xlim = [0,90]
+    Ylims = {'RMSE':[2.4,5.6],'MAE':[1.6, 3.6],'MRE':[5,13],'Run_Time':[0,500]}
+    Yticks = {'RMSE':[2.4,2.8,3.2,3.6,4.0,4.4,4.8,5.2,5.6], 
+            'MAE': [1.6,1.8,2.0,2.2,2.4,2.6,2.8,3.0,3.2,3.4,3.6],
+            'MRE': list(range(5,14,1)),
+            'Run_Time': list(range(0,401,50))}
     for eva in eva_dict:
         ax = plt.subplot()
         nl = 0
 
         ax.set_xlabel('Missing Rate (%)')
         ax.set_ylabel(eva+ ' ('+ metric_dict[eva] + ')')
+
+        ax.set_xlim(Xlim)
+        ax.set_ylim(Ylims[eva])
+
+        ax.set_yticks(Yticks[eva])
         
-        xmajorLocator = MultipleLocator(Xmajor)
-        ax.xaxis.set_major_locator(xmajorLocator)
-        xminorLocator = MultipleLocator(Xminor)
-        ax.xaxis.set_minor_locator(xminorLocator)
-        yminorLocator = MultipleLocator(Yminor[eva])
-        ax.yaxis.set_minor_locator(yminorLocator)
+        #xmajorLocator = MultipleLocator(Xmajor)
+        #ax.xaxis.set_major_locator(xmajorLocator)
+        #yminorLocator = MultipleLocator(Yminor[eva])
+        #ax.yaxis.set_minor_locator(yminorLocator)
         
         ax.xaxis.grid(True, which='major')
         ax.yaxis.grid(True, which='minor')
@@ -527,8 +535,12 @@ def compare_PI(ori_speeddata,ori_W,miss_type="rand"):
     fw = open('compare_PI'+'.txt','w')
     fw.write('Missing Rate (%):' + ','.join(list(map(str,miss_list)))+'\n')
     Xmajor = 10
-    Xminor = 2
-    Yminor = {'RMSE':0.2, 'MAE':0.2, 'MRE':0.5, 'Run_Time':2}
+    Xminor = 10
+    Yminor = {'RMSE':1, 'MAE':1, 'MRE':2, 'Run_Time':10}
+    Xlim = [0,90]
+    Ylims = {'RMSE':[2,12],'MAE':[2,10],'MRE':[6,26],'Run_Time':[10,100]}
+    Yticks = {'RMSE':list(range(2,13)), 'MAE': list(range(2,11)),
+            'MRE': list(range(6,27,2)), 'Run_Time': list(range(10,101,10))}
     for eva in eva_dict:
         
         ax = plt.subplot()
@@ -536,15 +548,20 @@ def compare_PI(ori_speeddata,ori_W,miss_type="rand"):
 
         ax.set_xlabel('Missing Rate (%)')
         ax.set_ylabel(eva+ ' ('+ metric_dict[eva] + ')')
+
+        ax.set_xlim(Xlim)
+        ax.set_ylim(Ylims[eva])
+
+        ax.set_yticks(Yticks[eva])
         
-        xmajorLocator = MultipleLocator(Xmajor)
-        ax.xaxis.set_major_locator(xmajorLocator)
-        xminorLocator = MultipleLocator(Xminor)
-        ax.xaxis.set_minor_locator(xminorLocator)
+        #xmajorLocator = MultipleLocator(Xmajor)
+        #ax.xaxis.set_major_locator(xmajorLocator)
+        #xminorLocator = MultipleLocator(Xminor)
+        #ax.xaxis.set_minor_locator(xminorLocator)
         yminorLocator = MultipleLocator(Yminor[eva])
         ax.yaxis.set_minor_locator(yminorLocator)
         
-        ax.xaxis.grid(True, which='major')
+        ax.xaxis.grid(True, which='minor')
         ax.yaxis.grid(True, which='minor')
         # xticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi],
         #        [r'$-pi$', r'$-pi/2$', r'$0$', r'$+pi/2$', r'$+pi$'])
@@ -600,7 +617,7 @@ if __name__ == '__main__':
     data_size = np.shape(ori_speeddata)
     print(data_size)
 
-    compare_methods(ori_speeddata,ori_W,"cont")
+    compare_methods(ori_speeddata,ori_W,"rand")
     #compare_PI(ori_speeddata,ori_W,"rand")
     sys.exit() 
     miss_ratio = 0.2 
@@ -627,23 +644,3 @@ if __name__ == '__main__':
     est_STD = STD_cpt(miss_data,W,p=0.75)
     print(rmse_mape_rse(est_STD, ori_speeddata, (W|ori_W==False)))
     sys.exit()
-
-    halrtc_para = [3e-3,100,1e-4]
-    [lou,K,conv_thre] = halrtc_para
-    time0 = time.time()
-    #est_halrtc = halrtc_cpt(miss_data, 1.3e-3, 1e-4, 100, W, 0)
-    time1 = time.time()
-    #print('ori_halrtc:', rmse_mape_rse(est_halrtc, ori_speeddata, (W | (ori_W == False))))
-    print('ori_time', str(time1- time0) + 's')
-    K_n = 2
-    labels = SC_1(miss_data, 6, K_n, axis=0)
-    est_SC = cluster_ha(labels, miss_data, W, K_n, halrtc_para, axis=0)
-    time_e = time.time()
-    print('sc_est:',rmse_mape_rse(est_SC, ori_speeddata, W|(ori_W==False)))
-    clr_assign,K_n = road_Kmeans(miss_data,ori_W,K_n,W,axis=0,method='cos')
-    est_kmeans = cluster_ha(clr_assign,miss_data,W,K_n,halrtc_para,axis=0)
-    print('kmeans_est:',rmse_mape_rse(est_kmeans,ori_speeddata,W|(ori_W==False)))
-    time2 = time.time()
-    print('kmeans_time:',time2-time1,'s')
-    sys.exit()
-    cr = range(30)

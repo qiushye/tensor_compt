@@ -106,6 +106,8 @@ def STD_cpt(sparse_data,W,threshold=1e-4, alpha=2e-10, lm=0.01, p=0.7):
     ds = sparse_data.shape
     X_ori = sparse_data.copy()
     U_list,r_list = T_SVD(X_ori,p)[-2:]
+    print(r_list)
+    #r_list = [70,16,34]
     core, U_list = tucker.hooi(dtensor(X_ori), r_list, init='nvecs')
     [A,B,C] = U_list
     #core = dtensor(X_ori).ttm(A.T, 0).ttm(B.T, 1).ttm(C.T, 2)
