@@ -1,0 +1,10 @@
+img_test/
+img_test1/
+*.png
+*.txt
+data/
+*.mat
+*.pyc
+__pycache__
+.idea/
+run.sh
